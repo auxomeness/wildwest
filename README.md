@@ -71,7 +71,7 @@ wildwest
 
 Browser (JS)
 ↓
-WebSocket / Node bridge (optional)
+WebSocket / Node bridge 
 ↓
 C Server (core multiplayer engine)
 ↓
