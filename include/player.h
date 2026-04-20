@@ -1,8 +1,7 @@
 #ifndef PLAYER_H
 #define PLAYER_H
 
-//Nigger, Please Read.
-//Defines The Player Action, states and Position
+
 typedef struct Player Player;
 
 Player* player_create(int start_row);
