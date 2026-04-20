@@ -3,8 +3,6 @@
 
 #include "player.h"
 
-//Nigger, Please Read.
-//Game Functions is here buddy, Deal with it.
 
 typedef enum {
     MOVE_UP,
