@@ -15,7 +15,7 @@ Player* player_create(int start_row) {
     p->hp = 100;
     p->row = start_row;
     p->potions = 3;
-    p->miss_count = 0;
+    p->miss_count = 1;
     p->crit_chance;
     return p;
 }
@@ -33,12 +33,15 @@ void player_shoot(Player* shooter, Player* target) {
         srand(time(NULL));
         if (checkCritical((shooter->crit_chance * shooter->miss_count)) ){
             target->hp -= 30;
+            shooter->miss_count = 1;
         } else {
             target->hp -= 20;
         }
     } else {
         shooter->hp -= 10;
-        shooter->miss_count += 1;
+        if (shooter->miss_count == 6) {
+            shooter->miss_count = 1;
+        }
     }
 }
 
