@@ -5,6 +5,7 @@ struct Player {
     int hp;
     int row;
     int potions;
+    int crit_count;
 };
 
 Player* player_create(int start_row) {
@@ -21,7 +22,11 @@ void player_move(Player* p, int direction) {
 
 void player_shoot(Player* shooter, Player* target) {
     if (shooter->row == target->row) {
-        target->hp -= 20;
+        if (shooter->crit_count == 3) {
+            target->hp -= 20;
+        } else {
+            target->hp -= 20
+        }
     } else {
         shooter->hp -= 10;
     }
