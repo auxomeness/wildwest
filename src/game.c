@@ -28,3 +28,10 @@ void game_resolve_turn(Game* g, Action a1, Action a2) {
 int game_is_over(Game* g) {
     return player_get_hp(g->p1) <= 0 || player_get_hp(g->p2) <= 0;
 }
+
+int move_phase_done(char player_input) {
+    if (player_input != ' ') {
+        return 1;
+    }
+    return 0;
+}

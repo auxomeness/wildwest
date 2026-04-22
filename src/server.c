@@ -12,8 +12,8 @@ typedef struct {
 } Session;
 
 Action parse_action(char* msg) {
-    if (strncmp(msg, "UP", 2) == 0) return MOVE_UP;
-    if (strncmp(msg, "DOWN", 4) == 0) return MOVE_DOWN;
+    if (strncmp(msg, "\e[{n}A", 7) == 0) return MOVE_UP;
+    if (strncmp(msg, "\e[{n}B", 7) == 0) return MOVE_DOWN;
     if (strncmp(msg, "SHOOT", 5) == 0) return SHOOT;
     if (strncmp(msg, "HEAL", 4) == 0) return HEAL;
     return SHOOT;
@@ -26,6 +26,20 @@ void* game_thread(void* arg) {
     char buf1[1024], buf2[1024];
 
     while (!game_is_over(g)) {
+
+        while(move_phase_done(g) != 1) {
+
+            recv_msg(s->p1_fd, buf1);
+            recv_msg(s->p2_fd, buf2);
+
+            Action m1 = parse_action(buf1);
+            Action m2 = parse_action(buf2);
+
+            if (m1 == MOVE_UP) player_move(g->p1, -1);
+            if (m1 == MOVE_DOWN) player_move(g->p1, 1);
+
+        }
+                
         recv_msg(s->p1_fd, buf1);
         recv_msg(s->p2_fd, buf2);
 
