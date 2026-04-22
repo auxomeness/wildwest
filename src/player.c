@@ -39,7 +39,7 @@ void player_shoot(Player* shooter, Player* target) {
         }
     } else {
         shooter->hp -= 10;
-        if (shooter->miss_count == 6) {
+        if (shooter->miss_count == 5) {
             shooter->miss_count = 1;
         }
     }
