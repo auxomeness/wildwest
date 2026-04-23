@@ -1,6 +1,7 @@
 #include "./include/player.h"
 #include <stdlib.h>
 #include <stdbool.h>
+#include <time.h>
 
 struct Player {
     int hp;
@@ -16,7 +17,7 @@ Player* player_create(int start_row) {
     p->row = start_row;
     p->potions = 3;
     p->miss_count = 1;
-    p->crit_chance;
+    p->crit_chance = 12;
     return p;
 }
 
@@ -29,18 +30,17 @@ bool checkCritical(int crit_chance) {
 }
 
 void player_shoot(Player* shooter, Player* target) {
-    if (shooter->row == target->row) {
-        srand(time(NULL));
+    if (shooter->row == target->row) { // hit
         if (checkCritical((shooter->crit_chance * shooter->miss_count)) ){
             target->hp -= 30;
             shooter->miss_count = 1;
         } else {
             target->hp -= 20;
         }
-    } else {
+    } else { // miss
         shooter->hp -= 10;
-        if (shooter->miss_count == 5) {
-            shooter->miss_count = 1;
+        if (shooter->miss_count < 5) {
+            shooter->miss_count++;
         }
     }
 }
