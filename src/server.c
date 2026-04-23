@@ -45,6 +45,7 @@ void* game_thread(void* arg) {
 
 void start_server(int port) {
     int server_fd = create_server(port);
+    
 
     while (1) {
         printf("Waiting for players...\n");

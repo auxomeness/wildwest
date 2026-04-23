@@ -9,6 +9,7 @@ struct Player {
     int potions;
     int miss_count; //pirang beses mo namiss
     int crit_chance;
+    int 
 };
 
 Player* player_create(int start_row) {
@@ -47,8 +48,15 @@ void player_shoot(Player* shooter, Player* target) {
 
 void player_heal(Player* p) {
     if (p->potions > 0) {
-        p->hp += 30;
-        p->potions--;
+        if (p->hp < 100) {
+            p->hp += 30;
+            p->potions--;
+            if (p->hp > 100) {
+                p->hp = 100;
+            }
+        } else {
+            printf("You're already at full health! Potion cannot be used right now.");
+        }
     }
 }
 
