@@ -9,7 +9,6 @@ struct Player {
     int potions;
     int miss_count; //pirang beses mo namiss
     int crit_chance;
-    int 
 };
 
 Player* player_create(int start_row) {
@@ -39,7 +38,12 @@ void player_shoot(Player* shooter, Player* target) {
             target->hp -= 20;
         }
     } else { // miss
-        shooter->hp -= 10;
+        if (shooter->hp > 10) {
+            shooter->hp -= 10;
+            printf("You missed! The recoil deals 10 damage.\n");
+        } else {
+            printf("You missed! Your survival instincts prevent your from taking anymore damage.\n");
+        }
         if (shooter->miss_count < 5) {
             shooter->miss_count++;
         }
@@ -51,11 +55,13 @@ void player_heal(Player* p) {
         if (p->hp < 100) {
             p->hp += 30;
             p->potions--;
+
             if (p->hp > 100) {
                 p->hp = 100;
             }
+            
         } else {
-            printf("You're already at full health! Potion cannot be used right now.");
+            printf("You're already at full health! Potion cannot be used right now.\n");
         }
     }
 }
