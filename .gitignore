@@ -1,0 +1,5 @@
+*.o
+server
+client
+context.md
+render.md

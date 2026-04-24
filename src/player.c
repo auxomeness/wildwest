@@ -1,70 +1,110 @@
-#include "./include/player.h"
+#include "game.h"
+#include "player.h"
 #include <stdlib.h>
-#include <stdbool.h>
-#include <time.h>
 
-struct Player {
-    int hp;
-    int row;
-    int potions;
-    int miss_count; //pirang beses mo namiss
-    int crit_chance;
-};
-
-Player* player_create(int start_row) {
-    Player* p = malloc(sizeof(Player));
-    p->hp = 100;
-    p->row = start_row;
-    p->potions = 3;
-    p->miss_count = 1;
-    p->crit_chance = 12;
-    return p;
+void player_init(Player *player, int start_col)
+{
+    /* Every duel starts from the same base stats. */
+    player->col = start_col;
+    player->hp = MAX_HP;
+    player->potions = MAX_POTIONS;
+    player->crit_chance = DEFAULT_CRIT_CHANCE;
+    player->action = ACTION_NONE;
+    player->locked = 0;
 }
 
-void player_move(Player* p, int direction) {
-    p->row += direction;
-}
+void player_move(Player *player, int delta, int min_col, int max_col)
+{
+    /* Clamp movement so the player never leaves the visible arena. */
+    int next_col = player->col + delta;
 
-bool checkCritical(int crit_chance) {
-    return (rand() % 100) < crit_chance;
-}
-
-void player_shoot(Player* shooter, Player* target) {
-    if (shooter->row == target->row) { // hit
-        if (checkCritical((shooter->crit_chance * shooter->miss_count)) ){
-            target->hp -= 30;
-            shooter->miss_count = 1;
-        } else {
-            target->hp -= 20;
-        }
-    } else { // miss
-        if (shooter->hp > 10) {
-            shooter->hp -= 10;
-            printf("You missed! The recoil deals 10 damage.\n");
-        } else {
-            printf("You missed! Your survival instincts prevent your from taking anymore damage.\n");
-        }
-        if (shooter->miss_count < 5) {
-            shooter->miss_count++;
-        }
+    if (next_col < min_col) {
+        next_col = min_col;
     }
+
+    if (next_col > max_col) {
+        next_col = max_col;
+    }
+
+    player->col = next_col;
 }
 
-void player_heal(Player* p) {
-    if (p->potions > 0) {
-        if (p->hp < 100) {
-            p->hp += 30;
-            p->potions--;
+void player_lock(Player *player)
+{
+    player->locked = 1;
+}
 
-            if (p->hp > 100) {
-                p->hp = 100;
+void player_unlock(Player *player)
+{
+    player->locked = 0;
+}
+
+void player_clear_action(Player *player)
+{
+    player->action = ACTION_NONE;
+}
+
+void player_set_action(Player *player, Action action)
+{
+    player->action = action;
+}
+
+ResolveResult player_apply_shot(Player *shooter, Player *target)
+{
+    /* Shooting checks alignment, then resolves hit, crit, or backfire. */
+    if (shooter->action != ACTION_SHOOT) {
+        return RESULT_NONE;
+    }
+
+    if (shooter->col == target->col) {
+        if ((rand() % 100) < shooter->crit_chance) {
+            target->hp -= CRIT_DAMAGE;
+            if (target->hp < 0) {
+                target->hp = 0;
             }
-            
-        } else {
-            printf("You're already at full health! Potion cannot be used right now.\n");
+            return RESULT_SHOT_CRIT;
         }
+
+        target->hp -= SHOT_DAMAGE;
+        if (target->hp < 0) {
+            target->hp = 0;
+        }
+        return RESULT_SHOT_HIT;
     }
+
+    shooter->hp -= MISS_DAMAGE;
+
+    if (shooter->hp < 0) {
+        shooter->hp = 0;
+    }
+
+    return RESULT_SHOT_MISS;
 }
 
-int player_get_hp(Player* p) { return p->hp; }
-int player_get_row(Player* p) { return p->row; }
+ResolveResult player_apply_heal(Player *player)
+{
+    /* Healing only works if the player has a potion and is not at full HP. */
+    if (player->action != ACTION_HEAL) {
+        return RESULT_NONE;
+    }
+
+    if (player->hp <= 0) {
+        return RESULT_HEAL_FAIL;
+    }
+
+    if (player->potions <= 0) {
+        return RESULT_HEAL_FAIL;
+    }
+
+    if (player->hp >= MAX_HP) {
+        return RESULT_HEAL_FAIL;
+    }
+
+    player->hp += HEAL_AMOUNT;
+    if (player->hp > MAX_HP) {
+        player->hp = MAX_HP;
+    }
+
+    player->potions -= 1;
+    return RESULT_HEAL;
+}
