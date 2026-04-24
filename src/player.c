@@ -62,7 +62,15 @@ ResolveResult player_apply_shot(Player *shooter, Player *target)
             if (target->hp < 0) {
                 target->hp = 0;
             }
+
+            shooter->crit_chance = DEFAULT_CRIT_CHANCE;
+
             return RESULT_SHOT_CRIT;
+        }
+
+        /* Crit Chance stacks for every unsuccessful crit */
+        if (shooter->crit_chance < 65) {
+            shooter->crit_chance += 13;
         }
 
         target->hp -= SHOT_DAMAGE;
