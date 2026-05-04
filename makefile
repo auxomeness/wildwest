@@ -1,15 +1,26 @@
 CC = gcc
-CFLAGS = -Wall -pthread
+CFLAGS = -Wall -Wextra -std=c11 -pthread
+INCLUDES = -Iinclude
 
-SRC = src/main.c src/player.c src/game.c src/network.c src/server.c
-OBJ = $(SRC:.c=.o)
+# Shared gameplay code is linked into both binaries.
+COMMON_SRC = src/player.c src/game.c src/network.c
+SERVER_SRC = src/main.c src/server.c
+CLIENT_SRC = src/client.c
 
-TARGET = server
+COMMON_OBJ = $(COMMON_SRC:.c=.o)
+SERVER_OBJ = $(SERVER_SRC:.c=.o)
+CLIENT_OBJ = $(CLIENT_SRC:.c=.o)
 
-all: $(TARGET)
+all: server client
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -Iinclude -o $@ $^
+server: $(COMMON_OBJ) $(SERVER_OBJ)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+
+client: $(COMMON_OBJ) $(CLIENT_OBJ)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
-	rm -f src/*.o $(TARGET)
+	rm -f src/*.o server client
