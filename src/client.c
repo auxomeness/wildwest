@@ -236,6 +236,10 @@ int main(int argc, char **argv)
     int socket_fd;
     int port = DEFAULT_PORT;
     int keep_running = 1;
+<<<<<<< HEAD
+=======
+    int quit_armed = 0;
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
     int have_state = 0;
     NetBuffer buffer;
     GameState game;
@@ -280,6 +284,33 @@ int main(int argc, char **argv)
         while (key_available()) {
             int key = read_key();
 
+<<<<<<< HEAD
+=======
+            if (key == KEY_QUIT) {
+                if (!quit_armed) {
+                    quit_armed = 1;
+                    continue;
+                }
+
+                quit_armed = 0;
+
+                if (have_state && game.phase == PHASE_GAME_OVER) {
+                    send_text(socket_fd, "QUIT\n");
+                    keep_running = 0;
+                    break;
+                }
+
+                if (send_text(socket_fd, "QUIT\n") != 0) {
+                    keep_running = 0;
+                    break;
+                }
+
+                continue;
+            }
+
+            quit_armed = 0;
+
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
             if (key == KEY_LEFT) {
                 if (send_text(socket_fd, "LEFT\n") != 0) {
                     keep_running = 0;
@@ -305,10 +336,13 @@ int main(int argc, char **argv)
                     keep_running = 0;
                     break;
                 }
+<<<<<<< HEAD
             } else if (key == KEY_QUIT) {
                 send_text(socket_fd, "QUIT\n");
                 keep_running = 0;
                 break;
+=======
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
             }
         }
 
@@ -329,6 +363,7 @@ int main(int argc, char **argv)
 
         if (have_state) {
             game_build_display_key(&game, 2, render_key, sizeof(render_key));
+<<<<<<< HEAD
             if (strcmp(render_key, last_render_key) != 0) {
                 game_render(&game, 2);
                 strcpy(last_render_key, render_key);
@@ -337,6 +372,16 @@ int main(int argc, char **argv)
             if (!game.running) {
                 keep_running = 0;
             }
+=======
+            snprintf(render_key + strlen(render_key),
+                     sizeof(render_key) - strlen(render_key),
+                     "|%d",
+                     quit_armed);
+            if (strcmp(render_key, last_render_key) != 0) {
+                game_render(&game, 2, quit_armed);
+                strcpy(last_render_key, render_key);
+            }
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
         }
 
         if (keep_running) {
