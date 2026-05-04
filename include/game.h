@@ -54,6 +54,11 @@ typedef struct {
     int running;
 } GameState;
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
 /* Core game lifecycle and rendering helpers. */
 void game_init(GameState *game);
 void game_start_move_phase(GameState *game);
@@ -66,6 +71,11 @@ const char *game_phase_label(Phase phase);
 const char *game_action_label(Action action);
 const char *game_result_label(ResolveResult result);
 void game_build_display_key(const GameState *game, int player_id, char *buffer, size_t buffer_size);
+<<<<<<< HEAD
 void game_render(const GameState *game, int player_id);
+=======
+void game_render(const GameState *game, int player_id, int quit_armed);
+>>>>>>> 194727f (Refine terminal HUD and result banners)
+>>>>>>> 642be32 (Refine terminal HUD and result banners)
 
 #endif
