@@ -6,7 +6,7 @@
 
 /* Shared gameplay constants used by both server and client. */
 #define DEFAULT_PORT 51717
-#define GRID_HEIGHT 10
+#define GRID_HEIGHT 16
 #define GRID_WIDTH 5
 
 #define PLAYER1_ROW 1
@@ -18,7 +18,14 @@
 #define CRIT_DAMAGE 30
 #define MISS_DAMAGE 10
 #define HEAL_AMOUNT 30
-#define DEFAULT_CRIT_CHANCE 13
+#define DEFAULT_CRIT_CHANCE 12
+#define SUDDEN_DEATH_THRESHOLD 20
+#define SUDDEN_DEATH_GRID_HEIGHT GRID_HEIGHT
+#define SUDDEN_DEATH_MAX_AMMO 5
+#define SUDDEN_DEATH_RELOAD_MS 2000
+#define SUDDEN_DEATH_BULLET_STEP_MS 80
+#define SUDDEN_DEATH_DAMAGE 10
+#define DAMAGE_FEEDBACK_MS 900
 
 #define MOVE_PHASE_MS 15000
 #define ACTION_PHASE_MS 10000
@@ -30,7 +37,10 @@ typedef enum {
     PHASE_MOVE = 1,
     PHASE_ACTION = 2,
     PHASE_RESOLVE = 3,
-    PHASE_GAME_OVER = 4
+    PHASE_SUDDEN_DEATH_OFFER = 4,
+    PHASE_SUDDEN_DEATH_READY = 5,
+    PHASE_SUDDEN_DEATH_BATTLE = 6,
+    PHASE_GAME_OVER = 7
 } Phase;
 
 /* Full replicated game state sent from server to client. */
@@ -47,6 +57,29 @@ typedef struct {
     int bullet2_row;
     int bullet2_col;
     int bullet2_active;
+    int p1_sudden_death_vote;
+    int p2_sudden_death_vote;
+    int p1_sudden_death_vote_locked;
+    int p2_sudden_death_vote_locked;
+    int sudden_death_declined;
+    int p1_ammo;
+    int p2_ammo;
+    int p1_reload_ms;
+    int p2_reload_ms;
+    int p1_bullet_step_ms;
+    int p2_bullet_step_ms;
+    int p1_damage_feedback;
+    int p2_damage_feedback;
+    int p1_damage_feedback_ms;
+    int p2_damage_feedback_ms;
+    int p1_sd_bullet_row[SUDDEN_DEATH_MAX_AMMO];
+    int p1_sd_bullet_col[SUDDEN_DEATH_MAX_AMMO];
+    int p1_sd_bullet_active[SUDDEN_DEATH_MAX_AMMO];
+    int p1_sd_bullet_step_ms[SUDDEN_DEATH_MAX_AMMO];
+    int p2_sd_bullet_row[SUDDEN_DEATH_MAX_AMMO];
+    int p2_sd_bullet_col[SUDDEN_DEATH_MAX_AMMO];
+    int p2_sd_bullet_active[SUDDEN_DEATH_MAX_AMMO];
+    int p2_sd_bullet_step_ms[SUDDEN_DEATH_MAX_AMMO];
     Phase phase;
     int phase_time_ms;
     int round_number;
@@ -54,28 +87,21 @@ typedef struct {
     int running;
 } GameState;
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 642be32 (Refine terminal HUD and result banners)
 /* Core game lifecycle and rendering helpers. */
 void game_init(GameState *game);
 void game_start_move_phase(GameState *game);
 void game_start_action_phase(GameState *game);
 void game_start_resolve_phase(GameState *game);
-void game_update_bullets(GameState *game);
+void game_start_sudden_death_offer(GameState *game);
+void game_start_sudden_death_ready(GameState *game);
+void game_start_sudden_death_battle(GameState *game);
+void game_update_bullets(GameState *game, int delta_ms);
 int game_phase_time_limit(Phase phase);
 int game_countdown_seconds(const GameState *game);
 const char *game_phase_label(Phase phase);
 const char *game_action_label(Action action);
 const char *game_result_label(ResolveResult result);
 void game_build_display_key(const GameState *game, int player_id, char *buffer, size_t buffer_size);
-<<<<<<< HEAD
-void game_render(const GameState *game, int player_id);
-=======
 void game_render(const GameState *game, int player_id, int quit_armed);
->>>>>>> 194727f (Refine terminal HUD and result banners)
->>>>>>> 642be32 (Refine terminal HUD and result banners)
 
 #endif

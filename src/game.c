@@ -19,6 +19,62 @@ static void clear_results(GameState *game)
     game->p2_result = RESULT_NONE;
 }
 
+static void clear_sudden_death_bullets(GameState *game)
+{
+    int index;
+
+    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+        game->p1_sd_bullet_row[index] = 0;
+        game->p1_sd_bullet_col[index] = 0;
+        game->p1_sd_bullet_active[index] = 0;
+        game->p1_sd_bullet_step_ms[index] = 0;
+        game->p2_sd_bullet_row[index] = 0;
+        game->p2_sd_bullet_col[index] = 0;
+        game->p2_sd_bullet_active[index] = 0;
+        game->p2_sd_bullet_step_ms[index] = 0;
+    }
+}
+
+static void clear_damage_feedback(GameState *game)
+{
+    game->p1_damage_feedback = 0;
+    game->p2_damage_feedback = 0;
+    game->p1_damage_feedback_ms = 0;
+    game->p2_damage_feedback_ms = 0;
+}
+
+static void update_damage_feedback(GameState *game, int delta_ms)
+{
+    if (game->p1_damage_feedback_ms > 0) {
+        game->p1_damage_feedback_ms -= delta_ms;
+        if (game->p1_damage_feedback_ms <= 0) {
+            game->p1_damage_feedback_ms = 0;
+            game->p1_damage_feedback = 0;
+        }
+    }
+
+    if (game->p2_damage_feedback_ms > 0) {
+        game->p2_damage_feedback_ms -= delta_ms;
+        if (game->p2_damage_feedback_ms <= 0) {
+            game->p2_damage_feedback_ms = 0;
+            game->p2_damage_feedback = 0;
+        }
+    }
+}
+
+static void add_damage_feedback(GameState *game, int player_id, int damage)
+{
+    int *feedback = player_id == 1 ? &game->p1_damage_feedback : &game->p2_damage_feedback;
+    int *feedback_ms = player_id == 1 ? &game->p1_damage_feedback_ms : &game->p2_damage_feedback_ms;
+
+    if (damage <= 0) {
+        return;
+    }
+
+    *feedback = (*feedback_ms > 0) ? (*feedback + damage) : damage;
+    *feedback_ms = DAMAGE_FEEDBACK_MS;
+}
+
 static void update_winner(GameState *game)
 {
     /* Winner is evaluated after both actions have resolved. */
@@ -53,121 +109,86 @@ static ResolveResult enemy_result(const GameState *game, int player_id)
     return player_id == 1 ? game->p2_result : game->p1_result;
 }
 
-void game_init(GameState *game)
+static int current_grid_height(const GameState *game)
 {
-    /* Initial state stops at the ready screen until both players confirm. */
-    memset(game, 0, sizeof(*game));
-
-    player_init(&game->p1, GRID_WIDTH / 2);
-    player_init(&game->p2, GRID_WIDTH / 2);
-
-    game->running = 1;
-    game->round_number = 0;
-    game->phase = PHASE_WAITING;
-    game->phase_time_ms = 0;
-    game->p1_ready = 0;
-    game->p2_ready = 0;
-
-    clear_bullets(game);
-    clear_results(game);
-}
-
-void game_start_move_phase(GameState *game)
-{
-    /* Each round begins by clearing action locks and transient results. */
-    player_clear_action(&game->p1);
-    player_clear_action(&game->p2);
-    player_unlock(&game->p1);
-    player_unlock(&game->p2);
-
-    clear_bullets(game);
-    clear_results(game);
-    game->p1_ready = 0;
-    game->p2_ready = 0;
-
-    game->phase = PHASE_MOVE;
-    game->phase_time_ms = 0;
-    game->round_number += 1;
-}
-
-void game_start_action_phase(GameState *game)
-{
-    /* Default action is shoot so the player can simply lock it if desired. */
-    player_set_action(&game->p1, ACTION_SHOOT);
-    player_set_action(&game->p2, ACTION_SHOOT);
-    player_unlock(&game->p1);
-    player_unlock(&game->p2);
-
-    clear_bullets(game);
-
-    game->phase = PHASE_ACTION;
-    game->phase_time_ms = 0;
-}
-
-void game_start_resolve_phase(GameState *game)
-{
-    /* Resolve uses the locked positions and locked actions from this round. */
-    clear_bullets(game);
-
-    if (game->p1.action == ACTION_NONE) {
-        player_set_action(&game->p1, ACTION_SHOOT);
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        return SUDDEN_DEATH_GRID_HEIGHT;
     }
 
-<<<<<<< HEAD
-    if (game->p2.action == ACTION_NONE) {
-        player_set_action(&game->p2, ACTION_SHOOT);
-=======
-    printf("------------------\n");
-    printf("P1 HP: %d\n", player_get_hp(g->p1));
-    printf("P2 HP: %d\n", player_get_hp(g->p2));
-    printf("==================\n");
+    return GRID_HEIGHT;
 }
 
-// TURN RESOLUTION
-void game_resolve_turn(Game* g, Action a1, Action a2) {
-
-    // -------- MOVEMENT PHASE --------
-    if (a1 == MOVE_UP)   player_move(g->p1, -1);
-    if (a1 == MOVE_DOWN) player_move(g->p1, 1);
-
-    if (a2 == MOVE_UP)   player_move(g->p2, -1);
-    if (a2 == MOVE_DOWN) player_move(g->p2, 1);
-
-    // -------- SHOOTING PHASE --------
-    if (a1 == SHOOT) player_shoot(g->p1, g->p2);
-    if (a2 == SHOOT) player_shoot(g->p2, g->p1);
-
-    // -------- HEALING PHASE --------
-    if (a1 == HEAL) player_heal(g->p1);
-    if (a2 == HEAL) player_heal(g->p2);
-
-    game_render(g);
-}
-
-// GAME END CONDITION
-int game_is_over(Game* g) {
-    return player_get_hp(g->p1) <= 0 ||
-           player_get_hp(g->p2) <= 0;
-}
-
-<<<<<<< HEAD
-int move_phase_done(char player_input) {
-    if (player_input != ' ') {
+static int current_player1_row(const GameState *game)
+{
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
         return 1;
-=======
-static const Player *enemy_player(const GameState *game, int player_id)
-{
-    return player_id == 1 ? &game->p2 : &game->p1;
+    }
+
+    return PLAYER1_ROW;
 }
 
-static ResolveResult local_result(const GameState *game, int player_id)
+static int current_player2_row(const GameState *game)
 {
-    return player_id == 1 ? game->p1_result : game->p2_result;
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        return current_grid_height(game) - 2;
+    }
+
+    return PLAYER2_ROW;
 }
 
-static ResolveResult enemy_result(const GameState *game, int player_id)
+static void clear_sudden_death_vote(GameState *game)
 {
-    return player_id == 1 ? game->p2_result : game->p1_result;
+    game->p1_sudden_death_vote = 0;
+    game->p2_sudden_death_vote = 0;
+    game->p1_sudden_death_vote_locked = 0;
+    game->p2_sudden_death_vote_locked = 0;
+}
+
+static void reset_sudden_death_battle(GameState *game)
+{
+    game->p1.hp = MAX_HP;
+    game->p2.hp = MAX_HP;
+    game->p1.col = GRID_WIDTH / 2;
+    game->p2.col = GRID_WIDTH / 2;
+    game->p1.action = ACTION_NONE;
+    game->p2.action = ACTION_NONE;
+    game->p1.locked = 0;
+    game->p2.locked = 0;
+    game->p1_ammo = SUDDEN_DEATH_MAX_AMMO;
+    game->p2_ammo = SUDDEN_DEATH_MAX_AMMO;
+    game->p1_reload_ms = 0;
+    game->p2_reload_ms = 0;
+    game->p1_bullet_step_ms = 0;
+    game->p2_bullet_step_ms = 0;
+    clear_bullets(game);
+    clear_sudden_death_bullets(game);
+    clear_damage_feedback(game);
+    clear_results(game);
+}
+
+void game_start_sudden_death_offer(GameState *game)
+{
+    clear_sudden_death_vote(game);
+    player_unlock(&game->p1);
+    player_unlock(&game->p2);
+    game->phase = PHASE_SUDDEN_DEATH_OFFER;
+    game->phase_time_ms = 0;
+}
+
+void game_start_sudden_death_ready(GameState *game)
+{
+    reset_sudden_death_battle(game);
+    game->p1_ready = 0;
+    game->p2_ready = 0;
+    game->phase = PHASE_SUDDEN_DEATH_READY;
+    game->phase_time_ms = 0;
+}
+
+void game_start_sudden_death_battle(GameState *game)
+{
+    clear_bullets(game);
+    game->phase = PHASE_SUDDEN_DEATH_BATTLE;
+    game->phase_time_ms = 0;
 }
 
 static void print_double_box_border(int left_width, int right_width)
@@ -221,30 +242,37 @@ static void print_resource_bar(const char *label, int current, int maximum, cons
         filled = bar_slots;
     }
 
-    printf("%s[", label);
+    printf("%s", label);
     printf("%s", color_code);
     for (index = 0; index < bar_slots; index++) {
         printf("%s", index < filled ? "█" : "░");
     }
     printf("\033[0m");
-    printf("]");
 }
 
-static void print_status_bar_cell(const char *label, int hp, int potions, int width)
+static void print_status_bar_cell(const char *label, int hp, int secondary_value,
+                                  int secondary_max, const char *secondary_label,
+                                  const char *secondary_color, int width)
 {
     int visible_width = 0;
+    int hp_percent = (hp * 100) / MAX_HP;
 
-    printf("| %-5s ", label);
-    visible_width += 8;
+    printf("| ");
+
+    printf("%-5s ", label);
+    visible_width += 6;
 
     print_resource_bar("HP:", hp, MAX_HP, "\033[92m");
-    visible_width += 9;
-
-    printf("  ");
-    visible_width += 2;
-
-    print_resource_bar("P:", potions, MAX_POTIONS, "\033[91m");
     visible_width += 8;
+
+    printf(" %3d%%", hp_percent);
+    visible_width += 5;
+
+    printf(" ");
+    visible_width += 1;
+
+    print_resource_bar(secondary_label, secondary_value, secondary_max, secondary_color);
+    visible_width += 7;
 
     while (visible_width < width) {
         putchar(' ');
@@ -254,10 +282,14 @@ static void print_status_bar_cell(const char *label, int hp, int potions, int wi
     printf(" ");
 }
 
-static void print_status_bar_row(int left_hp, int left_potions, int right_hp, int right_potions, int width)
+static void print_status_bar_row(int left_hp, int left_secondary, int right_hp, int right_secondary,
+                                 int secondary_max, const char *secondary_label,
+                                 const char *secondary_color, int width)
 {
-    print_status_bar_cell("YOU", left_hp, left_potions, width);
-    print_status_bar_cell("ENEMY", right_hp, right_potions, width);
+    print_status_bar_cell("YOU", left_hp, left_secondary, secondary_max,
+                          secondary_label, secondary_color, width);
+    print_status_bar_cell("ENEMY", right_hp, right_secondary, secondary_max,
+                          secondary_label, secondary_color, width);
     printf("|\n");
 }
 
@@ -341,6 +373,67 @@ static void print_result_banner(int winner, int player_id)
     }
 }
 
+static void print_sudden_death_banner(void)
+{
+    static const char *sudden_death_lines[] = {
+        "  ********   **     **   *******     *******     ********   ****     **",
+        " **//////   /**    /**  /**////**   /**////**   /**/////   /**/**   /**",
+        "/**         /**    /**  /**    /**  /**    /**  /**        /**//**  /**",
+        "/*********  /**    /**  /**    /**  /**    /**  /*******   /** //** /**",
+        "////////**  /**    /**  /**    /**  /**    /**  /**////    /**  //**/**",
+        "       /**  /**    /**  /**    **   /**    **   /**        /**   //****",
+        " ********   //*******   /*******    /*******    /********  /**    //***",
+        "////////     ///////    ///////     ///////     ////////   //      /// ",
+        " *******     ********       **       **********   **      **",
+        "/**////**   /**/////       ****     /////**///   /**     /**",
+        "/**    /**  /**           **//**        /**      /**     /**",
+        "/**    /**  /*******     **  //**       /**      /**********",
+        "/**    /**  /**////     **********      /**      /**//////**",
+        "/**    **   /**        /**//////**      /**      /**     /**",
+        "/*******    /********  /**     /**      /**      /**     /**",
+        "///////     ////////   //      //       //       //      // "
+    };
+    int index;
+
+    for (index = 0; index < (int)(sizeof(sudden_death_lines) / sizeof(sudden_death_lines[0])); index++) {
+        print_banner_line(sudden_death_lines[index], 71);
+    }
+}
+
+static void print_title_banner(void)
+{
+    static const char *title_lines[] = {
+        " **       **   **   **         *******   ",
+        "/**      /**  /**  /**        /**////**  ",
+        "/**   *  /**  /**  /**        /**    /**",
+        "/**  *** /**  /**  /**        /**    /**",
+        "/** **/**/**  /**  /**        /**    /**",
+        "/**** //****  /**  /**        /**    **  ",
+        "/**/   ///**  /**  /********  /*******   ",
+        "//       //   //   ////////   ///////    ",
+        " **       **   ********    ********   **********",
+        "/**      /**  /**/////    **//////   /////**/// ",
+        "/**   *  /**  /**        /**             /**    ",
+        "/**  *** /**  /*******   /*********      /**    ",
+        "/** **/**/**  /**////    ////////**      /**    ",
+        "/**** //****  /**               /**      /**    ",
+        "/**/   ///**  /********   ********       /**    ",
+        "//       //   ////////   ////////        //     "
+    };
+    int index;
+    int padding = 6;
+
+    for (index = 0; index < (int)(sizeof(title_lines) / sizeof(title_lines[0])); index++) {
+        int column;
+
+        for (column = 0; column < padding; column++) {
+            putchar(' ');
+        }
+
+        printf("%s\n", title_lines[index]);
+    }
+}
+
 void game_init(GameState *game)
 {
     /* Initial state stops at the ready screen until both players confirm. */
@@ -355,9 +448,20 @@ void game_init(GameState *game)
     game->phase_time_ms = 0;
     game->p1_ready = 0;
     game->p2_ready = 0;
+    game->sudden_death_declined = 0;
+    clear_sudden_death_vote(game);
+    game->p1_ammo = 0;
+    game->p2_ammo = 0;
+    game->p1_reload_ms = 0;
+    game->p2_reload_ms = 0;
+    game->p1_bullet_step_ms = 0;
+    game->p2_bullet_step_ms = 0;
+    clear_damage_feedback(game);
+    clear_sudden_death_bullets(game);
 
     clear_bullets(game);
     clear_results(game);
+    clear_damage_feedback(game);
 }
 
 void game_start_move_phase(GameState *game)
@@ -395,23 +499,29 @@ void game_start_action_phase(GameState *game)
 void game_start_resolve_phase(GameState *game)
 {
     /* Resolve uses the locked positions and locked actions from this round. */
+    int p1_hp_before = game->p1.hp;
+    int p2_hp_before = game->p2.hp;
+
     clear_bullets(game);
+    clear_damage_feedback(game);
 
     if (game->p1.action == ACTION_NONE) {
         player_set_action(&game->p1, ACTION_SHOOT);
->>>>>>> 194727f (Refine terminal HUD and result banners)
->>>>>>> 642be32 (Refine terminal HUD and result banners)
+    }
+
+    if (game->p2.action == ACTION_NONE) {
+        player_set_action(&game->p2, ACTION_SHOOT);
     }
 
     if (game->p1.action == ACTION_SHOOT) {
         game->bullet1_active = 1;
-        game->bullet1_row = PLAYER1_ROW + 1;
+        game->bullet1_row = current_player1_row(game) + 1;
         game->bullet1_col = game->p1.col;
     }
 
     if (game->p2.action == ACTION_SHOOT) {
         game->bullet2_active = 1;
-        game->bullet2_row = PLAYER2_ROW - 1;
+        game->bullet2_row = current_player2_row(game) - 1;
         game->bullet2_col = game->p2.col;
     }
 
@@ -426,25 +536,99 @@ void game_start_resolve_phase(GameState *game)
         game->p2_result = player_apply_heal(&game->p2);
     }
 
+    add_damage_feedback(game, 1, p1_hp_before - game->p1.hp);
+    add_damage_feedback(game, 2, p2_hp_before - game->p2.hp);
+
     update_winner(game);
 
     game->phase = PHASE_RESOLVE;
     game->phase_time_ms = 0;
 }
 
-void game_update_bullets(GameState *game)
+void game_update_bullets(GameState *game, int delta_ms)
 {
-    /* Bullet sprites move one row per render tick during resolve. */
+    /* Bullet movement depends on whether the game is in resolve or sudden death. */
+    update_damage_feedback(game, delta_ms);
+
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        int index;
+
+        if (game->p1_ammo == 0 && game->p1_reload_ms < SUDDEN_DEATH_RELOAD_MS) {
+            game->p1_reload_ms += delta_ms;
+            if (game->p1_reload_ms >= SUDDEN_DEATH_RELOAD_MS) {
+                game->p1_ammo = SUDDEN_DEATH_MAX_AMMO;
+                game->p1_reload_ms = 0;
+            }
+        }
+
+        if (game->p2_ammo == 0 && game->p2_reload_ms < SUDDEN_DEATH_RELOAD_MS) {
+            game->p2_reload_ms += delta_ms;
+            if (game->p2_reload_ms >= SUDDEN_DEATH_RELOAD_MS) {
+                game->p2_ammo = SUDDEN_DEATH_MAX_AMMO;
+                game->p2_reload_ms = 0;
+            }
+        }
+
+        for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+            if (game->p1_sd_bullet_active[index]) {
+                game->p1_sd_bullet_step_ms[index] += delta_ms;
+                while (game->p1_sd_bullet_active[index] &&
+                       game->p1_sd_bullet_step_ms[index] >= SUDDEN_DEATH_BULLET_STEP_MS) {
+                    game->p1_sd_bullet_step_ms[index] -= SUDDEN_DEATH_BULLET_STEP_MS;
+                    game->p1_sd_bullet_row[index] += 1;
+
+                    if (game->p1_sd_bullet_row[index] >= current_player2_row(game)) {
+                        if (game->p1_sd_bullet_col[index] == game->p2.col) {
+                            game->p2.hp -= SUDDEN_DEATH_DAMAGE;
+                            if (game->p2.hp < 0) {
+                                game->p2.hp = 0;
+                            }
+                            add_damage_feedback(game, 2, SUDDEN_DEATH_DAMAGE);
+                        }
+                        game->p1_sd_bullet_active[index] = 0;
+                    }
+                }
+            }
+
+            if (game->p2_sd_bullet_active[index]) {
+                game->p2_sd_bullet_step_ms[index] += delta_ms;
+                while (game->p2_sd_bullet_active[index] &&
+                       game->p2_sd_bullet_step_ms[index] >= SUDDEN_DEATH_BULLET_STEP_MS) {
+                    game->p2_sd_bullet_step_ms[index] -= SUDDEN_DEATH_BULLET_STEP_MS;
+                    game->p2_sd_bullet_row[index] -= 1;
+
+                    if (game->p2_sd_bullet_row[index] <= current_player1_row(game)) {
+                        if (game->p2_sd_bullet_col[index] == game->p1.col) {
+                            game->p1.hp -= SUDDEN_DEATH_DAMAGE;
+                            if (game->p1.hp < 0) {
+                                game->p1.hp = 0;
+                            }
+                            add_damage_feedback(game, 1, SUDDEN_DEATH_DAMAGE);
+                        }
+                        game->p2_sd_bullet_active[index] = 0;
+                    }
+                }
+            }
+        }
+
+        update_winner(game);
+        if (game->winner == 3) {
+            game->winner = 0;
+            game_start_sudden_death_ready(game);
+        }
+        return;
+    }
+
     if (game->bullet1_active) {
         game->bullet1_row += 1;
-        if (game->bullet1_row > PLAYER2_ROW) {
+        if (game->bullet1_row > current_player2_row(game)) {
             game->bullet1_active = 0;
         }
     }
 
     if (game->bullet2_active) {
         game->bullet2_row -= 1;
-        if (game->bullet2_row < PLAYER1_ROW) {
+        if (game->bullet2_row < current_player1_row(game)) {
             game->bullet2_active = 0;
         }
     }
@@ -466,11 +650,6 @@ int game_phase_time_limit(Phase phase)
 
     return 0;
 }
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 642be32 (Refine terminal HUD and result banners)
 
 int game_countdown_seconds(const GameState *game)
 {
@@ -495,6 +674,18 @@ const char *game_phase_label(Phase phase)
 
     if (phase == PHASE_RESOLVE) {
         return "RESOLVE";
+    }
+
+    if (phase == PHASE_SUDDEN_DEATH_OFFER) {
+        return "SD OFFER";
+    }
+
+    if (phase == PHASE_SUDDEN_DEATH_READY) {
+        return "SD READY";
+    }
+
+    if (phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        return "SUDDEN DEATH";
     }
 
     if (phase == PHASE_GAME_OVER) {
@@ -542,6 +733,43 @@ const char *game_result_label(ResolveResult result)
     return "NONE";
 }
 
+static void append_display_key_int(char *buffer, size_t buffer_size, int value)
+{
+    size_t used = strlen(buffer);
+
+    if (used >= buffer_size) {
+        return;
+    }
+
+    snprintf(buffer + used, buffer_size - used, "|%d", value);
+}
+
+static void format_player_cell(char *buffer, size_t buffer_size, char player_char)
+{
+    snprintf(buffer, buffer_size, "   %c   ", player_char);
+}
+
+static void format_damage_cell(char *buffer, size_t buffer_size, int damage)
+{
+    if (damage > 0) {
+        char text[8];
+
+        snprintf(text, sizeof(text), "-%dHP", damage);
+        snprintf(buffer, buffer_size, "%-7s", text);
+    } else {
+        snprintf(buffer, buffer_size, "       ");
+    }
+}
+
+static int damage_feedback_col(int player_col)
+{
+    if (player_col < GRID_WIDTH - 1) {
+        return player_col + 1;
+    }
+
+    return player_col - 1;
+}
+
 void game_build_display_key(const GameState *game, int player_id, char *buffer, size_t buffer_size)
 {
     /* Used to avoid redrawing the same frame repeatedly. */
@@ -549,6 +777,8 @@ void game_build_display_key(const GameState *game, int player_id, char *buffer, 
     const Player *enemy = enemy_player(game, player_id);
     int enemy_visible = (game->phase == PHASE_RESOLVE || game->phase == PHASE_GAME_OVER);
     int countdown = -1;
+    int sd_visible = (game->phase == PHASE_SUDDEN_DEATH_BATTLE);
+    int index;
 
     if (game->phase == PHASE_MOVE || game->phase == PHASE_ACTION) {
         countdown = game_countdown_seconds(game);
@@ -570,7 +800,7 @@ void game_build_display_key(const GameState *game, int player_id, char *buffer, 
              enemy->hp,
              enemy->potions,
              enemy->locked,
-             enemy_visible ? enemy->col : -1,
+             (enemy_visible || sd_visible) ? enemy->col : -1,
              game->p1_ready,
              game->p2_ready,
              local_result(game, player_id),
@@ -581,13 +811,35 @@ void game_build_display_key(const GameState *game, int player_id, char *buffer, 
              game->bullet2_row,
              game->bullet2_col,
              game->bullet2_active);
+
+    snprintf(buffer + strlen(buffer),
+             buffer_size - strlen(buffer),
+             "|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d",
+             game->p1_sudden_death_vote,
+             game->p2_sudden_death_vote,
+             game->p1_sudden_death_vote_locked,
+             game->p2_sudden_death_vote_locked,
+             game->p1_ammo,
+             game->p2_ammo,
+             game->p1_reload_ms,
+             game->p2_reload_ms,
+             game->phase == PHASE_SUDDEN_DEATH_BATTLE,
+             game->sudden_death_declined);
+
+    append_display_key_int(buffer, buffer_size, game->p1_damage_feedback);
+    append_display_key_int(buffer, buffer_size, game->p2_damage_feedback);
+
+    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+        append_display_key_int(buffer, buffer_size, game->p1_sd_bullet_row[index]);
+        append_display_key_int(buffer, buffer_size, game->p1_sd_bullet_col[index]);
+        append_display_key_int(buffer, buffer_size, game->p1_sd_bullet_active[index]);
+        append_display_key_int(buffer, buffer_size, game->p2_sd_bullet_row[index]);
+        append_display_key_int(buffer, buffer_size, game->p2_sd_bullet_col[index]);
+        append_display_key_int(buffer, buffer_size, game->p2_sd_bullet_active[index]);
+    }
 }
 
-<<<<<<< HEAD
-void game_render(const GameState *game, int player_id)
-=======
 void game_render(const GameState *game, int player_id, int quit_armed)
->>>>>>> 642be32 (Refine terminal HUD and result banners)
 {
     /* Render one full terminal frame for the requested player perspective. */
     const Player *self = local_player(game, player_id);
@@ -596,9 +848,9 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     ResolveResult foe_result = enemy_result(game, player_id);
     char self_char = player_id == 1 ? '1' : '2';
     char enemy_char = player_id == 1 ? '2' : '1';
-    int enemy_visible = (game->phase == PHASE_RESOLVE || game->phase == PHASE_GAME_OVER);
-<<<<<<< HEAD
-=======
+    int enemy_visible = (game->phase == PHASE_RESOLVE ||
+                         game->phase == PHASE_GAME_OVER ||
+                         game->phase == PHASE_SUDDEN_DEATH_BATTLE);
     int self_ready = player_id == 1 ? game->p1_ready : game->p2_ready;
     int enemy_ready = player_id == 1 ? game->p2_ready : game->p1_ready;
     int countdown = -1;
@@ -611,48 +863,51 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     char title_left[64];
     char title_right[64];
     char controls_line[96];
+    char p1_cell[8];
+    char p2_cell[8];
+    char p1_damage_cell[8];
+    char p2_damage_cell[8];
     const int stat_width = 33;
     const int full_width = (stat_width * 2) + 3;
->>>>>>> 642be32 (Refine terminal HUD and result banners)
+    int arena_height = current_grid_height(game);
+    int player1_row = current_player1_row(game);
+    int player2_row = current_player2_row(game);
+    int show_arena = (game->phase != PHASE_SUDDEN_DEATH_READY);
+    int show_banner = (game->phase == PHASE_SUDDEN_DEATH_READY) &&
+                      ((game->phase_time_ms / 300) % 2 == 0);
+    int left_secondary = self->potions;
+    int right_secondary = enemy->potions;
+    int secondary_max = MAX_POTIONS;
+    const char *secondary_label = "P:";
+    const char *secondary_color = "\033[91m";
+    int self_sd_vote = player_id == 1 ? game->p1_sudden_death_vote : game->p2_sudden_death_vote;
+    int enemy_sd_vote = player_id == 1 ? game->p2_sudden_death_vote : game->p1_sudden_death_vote;
+    int self_sd_locked = player_id == 1 ? game->p1_sudden_death_vote_locked : game->p2_sudden_death_vote_locked;
+    int enemy_sd_locked = player_id == 1 ? game->p2_sudden_death_vote_locked : game->p1_sudden_death_vote_locked;
     int row;
     int col;
 
     printf("\033[2J\033[H");
-<<<<<<< HEAD
-    printf("Wild West Quick Draw | Player %d\n", player_id);
 
-    if (game->phase == PHASE_MOVE || game->phase == PHASE_ACTION) {
-        printf("Round: %d | Phase: %s | Countdown: %d\n",
-               game->round_number,
-               game_phase_label(game->phase),
-               game_countdown_seconds(game));
-    } else {
-        printf("Round: %d | Phase: %s\n",
-               game->round_number,
-               game_phase_label(game->phase));
-    }
+    format_player_cell(p1_cell, sizeof(p1_cell), '1');
+    format_player_cell(p2_cell, sizeof(p2_cell), '2');
+    format_damage_cell(p1_damage_cell, sizeof(p1_damage_cell), game->p1_damage_feedback);
+    format_damage_cell(p2_damage_cell, sizeof(p2_damage_cell), game->p2_damage_feedback);
 
-    printf("You   HP: %3d | Potions: %d | Locked: %s\n",
-           self->hp,
-           self->potions,
-           self->locked ? "YES" : "NO");
-    printf("Enemy HP: %3d | Potions: %d | Locked: %s\n",
-           enemy->hp,
-           enemy->potions,
-           enemy->locked ? "YES" : "NO");
     if (game->phase == PHASE_WAITING) {
-        printf("Ready: You [%c] | Enemy [%c]\n",
-               (player_id == 1 ? game->p1_ready : game->p2_ready) ? 'x' : ' ',
-               (player_id == 1 ? game->p2_ready : game->p1_ready) ? 'x' : ' ');
-        printf("Controls: Space = ready | q = quit\n");
-    } else if (game->phase == PHASE_MOVE) {
-        printf("Controls: Left/Right Arrow = move | Space = lock | q = quit\n");
-    } else if (game->phase == PHASE_ACTION) {
-        printf("Controls: [ = shoot | ] = heal | Space = lock | q = quit\n");
-    } else {
-        printf("Controls: q = quit\n");
+        printf("\n\n");
+        print_title_banner();
+        printf("\n");
+        print_banner_line("PRESS SPACE BAR TO START", 77);
+        if (self_ready) {
+            print_banner_line("Waiting for the other player...", 77);
+        }
+        if (quit_armed) {
+            printf("\nPress q again to quit.\n");
+        }
+        fflush(stdout);
+        return;
     }
-=======
 
     snprintf(title_left,
              sizeof(title_left),
@@ -661,24 +916,58 @@ void game_render(const GameState *game, int player_id, int quit_armed)
              sizeof(title_right),
              "Player %d",
              player_id);
-    snprintf(left_line1,
-             sizeof(left_line1),
-             "YOU   Locked: %-3s   Ready: [%c]",
-             self->locked ? "YES" : "NO",
-             self_ready ? 'x' : ' ');
-    snprintf(left_line2,
-             sizeof(left_line2),
-             "Action: %-5s",
-             game_action_label(self->action));
-    snprintf(right_line1,
-             sizeof(right_line1),
-             "ENEMY Locked: %-3s   Ready: [%c]",
-             enemy->locked ? "YES" : "NO",
-             enemy_ready ? 'x' : ' ');
-    snprintf(right_line2,
-             sizeof(right_line2),
-             "Action: %-5s",
-             game_action_label(enemy->action));
+
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        left_secondary = player_id == 1 ? game->p1_ammo : game->p2_ammo;
+        right_secondary = player_id == 1 ? game->p2_ammo : game->p1_ammo;
+        secondary_max = SUDDEN_DEATH_MAX_AMMO;
+        secondary_label = "A:";
+        secondary_color = "\033[93m";
+    }
+
+    if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
+        snprintf(left_line1, sizeof(left_line1), "YOU   Vote: %-3s Locked:[%c]",
+                 self_sd_vote ? "YES" : "NO",
+                 self_sd_locked ? 'x' : ' ');
+        snprintf(left_line2, sizeof(left_line2), "Need two YES votes");
+        snprintf(right_line1, sizeof(right_line1), "ENEMY Vote: %-3s Locked:[%c]",
+                 enemy_sd_vote ? "YES" : "NO",
+                 enemy_sd_locked ? 'x' : ' ');
+        snprintf(right_line2, sizeof(right_line2), "Need two YES votes");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        snprintf(left_line1, sizeof(left_line1), "YOU   Ready: [%c]", self_ready ? 'x' : ' ');
+        snprintf(left_line2, sizeof(left_line2), "HP reset. Ammo reset.");
+        snprintf(right_line1, sizeof(right_line1), "ENEMY Ready: [%c]", enemy_ready ? 'x' : ' ');
+        snprintf(right_line2, sizeof(right_line2), "HP reset. Ammo reset.");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        snprintf(left_line1, sizeof(left_line1), "YOU   Reload: %d.%ds",
+                 (player_id == 1 ? game->p1_reload_ms : game->p2_reload_ms) / 1000,
+                 ((player_id == 1 ? game->p1_reload_ms : game->p2_reload_ms) % 1000) / 100);
+        snprintf(left_line2, sizeof(left_line2), "Visible duel. First kill wins.");
+        snprintf(right_line1, sizeof(right_line1), "ENEMY Reload: %d.%ds",
+                 (player_id == 1 ? game->p2_reload_ms : game->p1_reload_ms) / 1000,
+                 ((player_id == 1 ? game->p2_reload_ms : game->p1_reload_ms) % 1000) / 100);
+        snprintf(right_line2, sizeof(right_line2), "Visible duel. First kill wins.");
+    } else {
+        snprintf(left_line1,
+                 sizeof(left_line1),
+                 "YOU   Locked: %-3s   Ready: [%c]",
+                 self->locked ? "YES" : "NO",
+                 self_ready ? 'x' : ' ');
+        snprintf(left_line2,
+                 sizeof(left_line2),
+                 "Action: %-5s",
+                 game_action_label(self->action));
+        snprintf(right_line1,
+                 sizeof(right_line1),
+                 "ENEMY Locked: %-3s   Ready: [%c]",
+                 enemy->locked ? "YES" : "NO",
+                 enemy_ready ? 'x' : ' ');
+        snprintf(right_line2,
+                 sizeof(right_line2),
+                 "Action: %-5s",
+                 game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action));
+    }
     snprintf(left_status_line,
              sizeof(left_status_line),
              "Round: %d   Phase: %s",
@@ -708,7 +997,19 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     } else if (game->phase == PHASE_ACTION) {
         snprintf(controls_line,
                  sizeof(controls_line),
-                 "Controls: [ = shoot | ] = heal | Space = lock | q = quit");
+                 "Controls: Left = shoot | Right = heal | Space = lock | q = quit");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
+        snprintf(controls_line,
+                 sizeof(controls_line),
+                 "Controls: Left = YES | Right = NO | Space = lock | q = quit");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        snprintf(controls_line,
+                 sizeof(controls_line),
+                 "Controls: Space = ready | q = quit");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        snprintf(controls_line,
+                 sizeof(controls_line),
+                 "Controls: Left/Right = move | Space = shoot | q = quit");
     } else {
         snprintf(controls_line,
                  sizeof(controls_line),
@@ -718,7 +1019,8 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     print_double_box_border(stat_width, stat_width);
     print_double_box_row(title_left, stat_width, title_right, stat_width);
     print_double_box_border(stat_width, stat_width);
-    print_status_bar_row(self->hp, self->potions, enemy->hp, enemy->potions, stat_width);
+    print_status_bar_row(self->hp, left_secondary, enemy->hp, right_secondary,
+                         secondary_max, secondary_label, secondary_color, stat_width);
     print_double_box_row(left_line1, stat_width, right_line1, stat_width);
     print_double_box_row(left_line2, stat_width, right_line2, stat_width);
     print_double_box_border(stat_width, stat_width);
@@ -726,70 +1028,84 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     print_double_box_border(stat_width, stat_width);
     print_single_box_row(controls_line, full_width);
     print_single_box_border(full_width);
->>>>>>> 642be32 (Refine terminal HUD and result banners)
     printf("\n");
 
-    printf("+");
-    for (col = 0; col < GRID_WIDTH * 7; col++) {
-        printf("=");
-    }
-    printf("+\n");
+    if (show_arena) {
+        printf("+");
+        for (col = 0; col < GRID_WIDTH * 7; col++) {
+            printf("=");
+        }
+        printf("+\n");
 
-    for (row = 0; row < GRID_HEIGHT; row++) {
-        printf("|");
+        for (row = 0; row < arena_height; row++) {
+            printf("|");
 
-        for (col = 0; col < GRID_WIDTH; col++) {
-<<<<<<< HEAD
-            char ch = ' ';
+            for (col = 0; col < GRID_WIDTH; col++) {
+                const char *cell = "       ";
+                int cell_used = 0;
+                int index;
 
-            if (game->bullet1_active && row == game->bullet1_row && col == game->bullet1_col) {
-                ch = 'v';
-            } else if (game->bullet2_active && row == game->bullet2_row && col == game->bullet2_col) {
-                ch = '^';
-            } else if (row == (player_id == 1 ? PLAYER1_ROW : PLAYER2_ROW) && col == self->col) {
-                ch = self_char;
-            } else if (enemy_visible &&
-                       row == (player_id == 1 ? PLAYER2_ROW : PLAYER1_ROW) &&
-                       col == enemy->col) {
-                ch = enemy_char;
+                if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+                    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+                        if (game->p1_sd_bullet_active[index] &&
+                            row == game->p1_sd_bullet_row[index] &&
+                            col == game->p1_sd_bullet_col[index]) {
+                            cell = "   $   ";
+                            cell_used = 1;
+                            break;
+                        }
+
+                        if (game->p2_sd_bullet_active[index] &&
+                            row == game->p2_sd_bullet_row[index] &&
+                            col == game->p2_sd_bullet_col[index]) {
+                            cell = "   $   ";
+                            cell_used = 1;
+                            break;
+                        }
+                    }
+                }
+
+                if (!cell_used && game->bullet1_active && row == game->bullet1_row && col == game->bullet1_col) {
+                    cell = (game->phase == PHASE_SUDDEN_DEATH_BATTLE) ? "   $   " :
+                           (game->p1_result == RESULT_SHOT_CRIT ? "   $   " : "   v   ");
+                } else if (!cell_used && game->bullet2_active && row == game->bullet2_row && col == game->bullet2_col) {
+                    cell = (game->phase == PHASE_SUDDEN_DEATH_BATTLE) ? "   $   " :
+                           (game->p2_result == RESULT_SHOT_CRIT ? "   $   " : "   ^   ");
+                } else if (!cell_used && row == (player_id == 1 ? player1_row : player2_row) && col == self->col) {
+                    cell = self_char == '1' ? p1_cell : p2_cell;
+                } else if (!cell_used &&
+                           enemy_visible &&
+                           row == (player_id == 1 ? player2_row : player1_row) &&
+                           col == enemy->col) {
+                    cell = enemy_char == '1' ? p1_cell : p2_cell;
+                } else if (!cell_used &&
+                           game->p1_damage_feedback > 0 &&
+                           enemy_visible &&
+                           row == player1_row &&
+                           col == damage_feedback_col(game->p1.col)) {
+                    cell = p1_damage_cell;
+                } else if (!cell_used &&
+                           game->p2_damage_feedback > 0 &&
+                           enemy_visible &&
+                           row == player2_row &&
+                           col == damage_feedback_col(game->p2.col)) {
+                    cell = p2_damage_cell;
+                }
+
+                printf("%s", cell);
             }
 
-            printf("   %c   ", ch);
-=======
-            const char *cell = "       ";
-
-            if (game->bullet1_active && row == game->bullet1_row && col == game->bullet1_col) {
-                cell = game->p1_result == RESULT_SHOT_CRIT ? "   $   " : "   v   ";
-            } else if (game->bullet2_active && row == game->bullet2_row && col == game->bullet2_col) {
-                cell = game->p2_result == RESULT_SHOT_CRIT ? "   $   " : "   ^   ";
-            } else if (row == (player_id == 1 ? PLAYER1_ROW : PLAYER2_ROW) && col == self->col) {
-                if (self_char == '1') {
-                    cell = "   1   ";
-                } else {
-                    cell = "   2   ";
-                }
-            } else if (enemy_visible &&
-                       row == (player_id == 1 ? PLAYER2_ROW : PLAYER1_ROW) &&
-                       col == enemy->col) {
-                if (enemy_char == '1') {
-                    cell = "   1   ";
-                } else {
-                    cell = "   2   ";
-                }
-            }
-
-            printf("%s", cell);
->>>>>>> 642be32 (Refine terminal HUD and result banners)
+            printf("|\n");
         }
 
-        printf("|\n");
+        printf("+");
+        for (col = 0; col < GRID_WIDTH * 7; col++) {
+            printf("=");
+        }
+        printf("+\n");
+    } else {
+        printf("\n\n\n");
     }
-
-    printf("+");
-    for (col = 0; col < GRID_WIDTH * 7; col++) {
-        printf("=");
-    }
-    printf("+\n");
 
     printf("\n");
 
@@ -801,23 +1117,35 @@ void game_render(const GameState *game, int player_id, int quit_armed)
         printf("SHOOT [%c]      HEAL [%c]\n",
                self->action == ACTION_SHOOT ? 'x' : ' ',
                self->action == ACTION_HEAL ? 'x' : ' ');
-        printf("Enemy position is still hidden. Use '[' for Shoot and ']' for Heal, then press Space to lock.\n");
+        printf("Enemy position is still hidden. Use Left for Shoot and Right for Heal, then press Space to lock.\n");
+    } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
+        print_sudden_death_banner();
+        printf("Both players are at %d HP or below. Enter sudden death only if both vote YES.\n",
+               SUDDEN_DEATH_THRESHOLD);
+        printf("SUDDEN DEATH [%c]      CONTINUE [%c]\n",
+               self_sd_vote == 1 ? 'x' : ' ',
+               self_sd_vote == 0 ? 'x' : ' ');
+        printf("You locked: [%c] | Enemy locked: [%c]\n",
+               self_sd_locked ? 'x' : ' ',
+               enemy_sd_locked ? 'x' : ' ');
+    } else if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        if (show_banner) {
+            print_sudden_death_banner();
+        }
+        printf("Both players must press Space to begin sudden death.\n");
+        printf("Ready: You [%c] | Enemy [%c]\n",
+               self_ready ? 'x' : ' ',
+               enemy_ready ? 'x' : ' ');
+    } else if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        printf("Sudden death is live. Both players are visible and the first kill wins.\n");
+        printf("Ammo reloads to %d after %d seconds when empty.\n",
+               SUDDEN_DEATH_MAX_AMMO,
+               SUDDEN_DEATH_RELOAD_MS / 1000);
     } else if (game->phase == PHASE_RESOLVE) {
         printf("Resolve: you %s | enemy %s\n",
                game_result_label(self_result),
                game_result_label(foe_result));
     } else if (game->phase == PHASE_GAME_OVER) {
-<<<<<<< HEAD
-        if (game->winner == 3) {
-            printf("Result: draw.\n");
-        } else {
-            printf("Result: Player %d wins.\n", game->winner);
-        }
-    }
-
-    fflush(stdout);
-}
-=======
         print_result_banner(game->winner, player_id);
         if (game->winner == 3) {
             printf("The duel ends in a draw.\n");
@@ -834,5 +1162,3 @@ void game_render(const GameState *game, int player_id, int quit_armed)
 
     fflush(stdout);
 }
->>>>>>> 194727f (Refine terminal HUD and result banners)
->>>>>>> 642be32 (Refine terminal HUD and result banners)
