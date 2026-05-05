@@ -128,3 +128,9 @@ wildwest/
 - The server is authoritative.
 - The client does not simulate gameplay decisions.
 - No external runtime dependency is needed for the title or result banners. `figlet` was used during development, then the generated banner text was adapted into C strings.
+
+## Developers
+Jorge Creiann Jarme
+Karl Austin Pavia
+Jose Miguel Villareal
+
