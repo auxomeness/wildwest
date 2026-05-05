@@ -1,117 +1,136 @@
-# Wild West Quick Draw 🎯
+# Wild West Quick Draw
 
-A turn-based multiplayer duel game set on a vertical battlefield where players predict movement, manage resources, and outplay opponents using strategy, timing, and deception.
+Wild West Quick Draw is a two-player terminal duel written in C. One terminal runs the server for Player 1. Another terminal runs the client for Player 2. The server owns the real match state and the client renders whatever state the server sends.
 
----
+The game is built for local terminal play or two machines on the same network.
 
-## 🕹️ Game Overview
+## Current Gameplay
 
-Two players start on opposite ends of a vertical grid. Each turn, players choose to:
+Each round has three normal phases:
 
-- Move (up or down)
-- Shoot (deal damage if aligned on same row)
-- Heal (use limited potions)
+- `MOVE`: both players choose a lane while the enemy position is hidden.
+- `ACTION`: both players choose `SHOOT` or `HEAL` while the enemy action is hidden.
+- `RESOLVE`: positions are revealed and the locked actions resolve.
 
-The first player to reduce the opponent’s HP to 0 wins.
+If both players drop to `20` HP or below and no winner exists yet, the game asks both players if they want sudden death. Sudden death only starts if both vote `YES`.
 
----
+## Controls
 
-## ⚙️ Features
+Start screen:
 
-- Multiplayer real-time server using C (sockets + threads)
-- Turn-based combat system
-- OOP-style architecture in C (structs + function pointers)
-- Modular codebase (src/include separation)
-- Hybrid mode with AI fallback
-- Python AI using Markov Chain prediction model
-- Smart opponent behavior based on movement patterns
+- `Space` = ready
+- `q` twice = quit directly
 
----
+Move phase:
 
-## 🧠 AI System (Python)
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = lock position
 
-The AI uses a **Markov Chain model** to predict enemy movement:
+Action phase:
 
-- Learns transition probabilities between rows
-- Predicts next opponent position
-- Adapts over time during gameplay
-- Uses stochastic decision-making for unpredictability
+- `Left Arrow` = select `SHOOT`
+- `Right Arrow` = select `HEAL`
+- `Space` = lock action
 
----
-## 🏗️ Project Structure (Not Final)
-```bash
-wildwest
-├── LICENSE
-├── ai
-│   ├── ai_player.py
-│   ├── base_player.py
-│   └── strategy.py
-├── include
-│   ├── game.h
-│   ├── network.h
-│   ├── player.h
-│   └── server.h
-├── makefile
-├── net
-│   └── client.py
-└── src
-    ├── game.c
-    ├── main.c
-    ├── network.c
-    ├── player.c
-    └── server.c
-```
+Sudden death vote:
 
+- `Left Arrow` = `YES`
+- `Right Arrow` = `NO`
+- `Space` = lock vote
 
----
+Sudden death battle:
 
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = shoot
 
-## 🔌 Architecture
+During the match, `q` twice quits. In game-over, `q` twice exits the result screen.
 
+## Combat Rules
 
-Browser (JS)
-↓
-WebSocket / Node bridge 
-↓
-C Server (core multiplayer engine)
-↓
-Python AI (Markov-based opponent, optional fallback)
+- Normal shot hit: `20` damage
+- Critical hit: `30` damage
+- Miss backfire: `10` self-damage
+- Heal: restores `30` HP
+- Potions: each player starts with `3`
+- Sudden death bullet damage: `10`
+- Sudden death ammo: `5`, reloads after `2` seconds when empty
 
+Damage feedback appears beside a player after damage is actually applied. In sudden death, that means the `-10HP` text appears only when the bullet reaches and hits the player.
 
----
+## Build
 
-## 🚀 Build & Run
-
-### Compile C server
 ```bash
 make
+```
+
+This builds:
+
+- `./server`
+- `./client`
+
+## Run On One Machine
+
+Terminal 1:
+
+```bash
 ./server
 ```
 
-Run Python AI:
+Terminal 2:
+
 ```bash
-cd python
-python main.py
+./client 127.0.0.1
 ```
 
----
+## Run On Two Machines
 
+On the server machine:
 
+```bash
+./server
+```
 
-🎓 Concepts Demonstrated:
-- Socket programming (C)
-- Multithreading (pthread)
-- Modular software design
-- OOP simulation in C
-- True OOP in Python
-- Markov Chain AI
-- Hybrid PvP / PvE system design
+On the client machine:
 
+```bash
+./client <server-ip>
+```
 
----
+Both machines must be on the same network, and the client must connect to the server machine IP address.
 
+## Project Structure
 
-📌 Notes:
-- Designed for Operating Systems coursework
-- Focus on concurrency, modularity, and system-level design
-- AI is optional and runs independently of core server
+```text
+wildwest/
+├── include/
+│   ├── game.h
+│   ├── network.h
+│   ├── player.h
+│   └── server.h
+├── src/
+│   ├── client.c
+│   ├── game.c
+│   ├── main.c
+│   ├── network.c
+│   ├── player.c
+│   └── server.c
+├── makefile
+├── README.md
+├── SETUP.md
+└── DOCUMENTATION.md
+```
+
+## Notes
+
+- The game uses TCP sockets.
+- The server is authoritative.
+- The client does not simulate gameplay decisions.
+- No external runtime dependency is needed for the title or result banners. `figlet` was used during development, then the generated banner text was adapted into C strings.
+
+## Developers
+
+- Jorge Creiann Jarme
+- Karl Austin Pavia
+- Jose Miguel Villareal

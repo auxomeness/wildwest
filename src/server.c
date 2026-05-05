@@ -135,6 +135,13 @@ static int read_key(void)
     return KEY_NONE;
 }
 
+static void trigger_local_forfeit(GameState *game)
+{
+    /* Local surrender ends the match but keeps the result screen open. */
+    game->winner = 2;
+    game->phase = PHASE_GAME_OVER;
+}
+
 static int elapsed_ms(struct timespec start, struct timespec end)
 {
     /* Timing is phase-based, so every loop computes a delta in milliseconds. */
@@ -144,61 +151,180 @@ static int elapsed_ms(struct timespec start, struct timespec end)
     return (int)(seconds * 1000L + nanoseconds / 1000000L);
 }
 
-static int send_state(int client_fd, const GameState *game)
+static int append_state_int(char *line, size_t line_size, int *offset, int value)
 {
-    /* Server sends one line of serialized state to the client every tick. */
-    char state_line[320];
-    int length;
+    int written;
 
-    length = snprintf(state_line,
-                      sizeof(state_line),
-                      "STATE %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
-                      game->phase,
-                      game->phase_time_ms,
-                      game->round_number,
-                      game->winner,
-                      game->running,
-                      game->p1.hp,
-                      game->p2.hp,
-                      game->p1.col,
-                      game->p2.col,
-                      game->p1.potions,
-                      game->p2.potions,
-                      game->p1.action,
-                      game->p2.action,
-                      game->p1.locked,
-                      game->p2.locked,
-                      game->p1_ready,
-                      game->p2_ready,
-                      game->p1_result,
-                      game->p2_result,
-                      game->bullet1_row,
-                      game->bullet1_col,
-                      game->bullet1_active,
-                      game->bullet2_row,
-                      game->bullet2_col,
-                      game->bullet2_active);
-
-    if (length <= 0) {
+    if (*offset >= (int)line_size) {
         return -1;
     }
 
-    return send_all(client_fd, state_line, (size_t)length);
+    written = snprintf(line + *offset, line_size - (size_t)*offset, " %d", value);
+    if (written <= 0 || *offset + written >= (int)line_size) {
+        return -1;
+    }
+
+    *offset += written;
+    return 0;
 }
 
-static void handle_local_input(GameState *game, int key)
+static int send_state(int client_fd, const GameState *game)
+{
+    /* Server sends one line of serialized state to the client every tick. */
+    char state_line[1024];
+    int offset;
+    int index;
+
+    offset = snprintf(state_line, sizeof(state_line), "STATE");
+    if (offset <= 0 || offset >= (int)sizeof(state_line)) {
+        return -1;
+    }
+
+    if (append_state_int(state_line, sizeof(state_line), &offset, game->phase) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->phase_time_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->round_number) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->winner) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->running) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.hp) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.hp) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.col) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.col) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.potions) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.potions) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.action) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.action) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.locked) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.locked) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_ready) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_ready) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_result) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_result) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet1_row) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet1_col) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet1_active) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet2_row) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet2_col) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->bullet2_active) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_sudden_death_vote) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_sudden_death_vote) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_sudden_death_vote_locked) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_sudden_death_vote_locked) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->sudden_death_declined) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_ammo) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_ammo) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_reload_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_reload_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_bullet_step_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_bullet_step_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_damage_feedback) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_damage_feedback) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_damage_feedback_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_damage_feedback_ms)) {
+        return -1;
+    }
+
+    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+        if (append_state_int(state_line, sizeof(state_line), &offset, game->p1_sd_bullet_row[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p1_sd_bullet_col[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p1_sd_bullet_active[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p1_sd_bullet_step_ms[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p2_sd_bullet_row[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p2_sd_bullet_col[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p2_sd_bullet_active[index]) ||
+            append_state_int(state_line, sizeof(state_line), &offset, game->p2_sd_bullet_step_ms[index])) {
+            return -1;
+        }
+    }
+
+    if (offset + 1 >= (int)sizeof(state_line)) {
+        return -1;
+    }
+    state_line[offset++] = '\n';
+    state_line[offset] = '\0';
+
+    return send_all(client_fd, state_line, (size_t)offset);
+}
+
+static void fire_sudden_death_shot(GameState *game, int player_id)
+{
+    Player *player = player_id == 1 ? &game->p1 : &game->p2;
+    int *ammo = player_id == 1 ? &game->p1_ammo : &game->p2_ammo;
+    int *reload_ms = player_id == 1 ? &game->p1_reload_ms : &game->p2_reload_ms;
+    int *bullet_rows = player_id == 1 ? game->p1_sd_bullet_row : game->p2_sd_bullet_row;
+    int *bullet_cols = player_id == 1 ? game->p1_sd_bullet_col : game->p2_sd_bullet_col;
+    int *bullet_active = player_id == 1 ? game->p1_sd_bullet_active : game->p2_sd_bullet_active;
+    int *step_ms = player_id == 1 ? game->p1_sd_bullet_step_ms : game->p2_sd_bullet_step_ms;
+    int index;
+
+    if (*ammo <= 0) {
+        return;
+    }
+
+    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+        if (!bullet_active[index]) {
+            break;
+        }
+    }
+
+    if (index == SUDDEN_DEATH_MAX_AMMO) {
+        return;
+    }
+
+    bullet_active[index] = 1;
+    bullet_cols[index] = player->col;
+    bullet_rows[index] = player_id == 1 ? 2 : (SUDDEN_DEATH_GRID_HEIGHT - 3);
+    step_ms[index] = 0;
+    *ammo -= 1;
+
+    if (*ammo == 0) {
+        *reload_ms = 0;
+    }
+}
+
+static int handle_local_input(GameState *game, int key, int *quit_armed)
 {
     /* Player 1 input is applied directly to the authoritative state. */
     if (key == KEY_QUIT) {
-        game->winner = 2;
-        game->phase = PHASE_GAME_OVER;
-        game->running = 0;
-        return;
+        if (!*quit_armed) {
+            *quit_armed = 1;
+            return 0;
+        }
+
+        *quit_armed = 0;
+
+        if (game->phase == PHASE_WAITING || game->phase == PHASE_GAME_OVER) {
+            return 1;
+        }
+
+        trigger_local_forfeit(game);
+        return 0;
     }
+
+    *quit_armed = 0;
 
     if (game->phase == PHASE_WAITING) {
         if (key == KEY_SPACE) {
             game->p1_ready = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER && !game->p1_sudden_death_vote_locked) {
+        if (key == KEY_LEFT) {
+            game->p1_sudden_death_vote = 1;
+        } else if (key == KEY_RIGHT) {
+            game->p1_sudden_death_vote = 0;
+        } else if (key == KEY_SPACE) {
+            game->p1_sudden_death_vote_locked = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        if (key == KEY_SPACE) {
+            game->p1_ready = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        if (key == KEY_LEFT) {
+            player_move(&game->p1, -1, 0, GRID_WIDTH - 1);
+        } else if (key == KEY_RIGHT) {
+            player_move(&game->p1, 1, 0, GRID_WIDTH - 1);
+        } else if (key == KEY_SPACE) {
+            fire_sudden_death_shot(game, 1);
         }
     } else if (game->phase == PHASE_MOVE && !game->p1.locked) {
         if (key == KEY_LEFT) {
@@ -209,14 +335,16 @@ static void handle_local_input(GameState *game, int key)
             player_lock(&game->p1);
         }
     } else if (game->phase == PHASE_ACTION && !game->p1.locked) {
-        if (key == KEY_SELECT_SHOOT) {
+        if (key == KEY_LEFT || key == KEY_SELECT_SHOOT) {
             player_set_action(&game->p1, ACTION_SHOOT);
-        } else if (key == KEY_SELECT_HEAL) {
+        } else if (key == KEY_RIGHT || key == KEY_SELECT_HEAL) {
             player_set_action(&game->p1, ACTION_HEAL);
         } else if (key == KEY_SPACE) {
             player_lock(&game->p1);
         }
     }
+
+    return 0;
 }
 
 static void handle_remote_command(GameState *game, const char *line)
@@ -225,13 +353,32 @@ static void handle_remote_command(GameState *game, const char *line)
     if (strcmp(line, "QUIT") == 0) {
         game->winner = 1;
         game->phase = PHASE_GAME_OVER;
-        game->running = 0;
         return;
     }
 
     if (game->phase == PHASE_WAITING) {
         if (strcmp(line, "LOCK") == 0) {
             game->p2_ready = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER && !game->p2_sudden_death_vote_locked) {
+        if (strcmp(line, "LEFT") == 0) {
+            game->p2_sudden_death_vote = 1;
+        } else if (strcmp(line, "RIGHT") == 0) {
+            game->p2_sudden_death_vote = 0;
+        } else if (strcmp(line, "LOCK") == 0) {
+            game->p2_sudden_death_vote_locked = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        if (strcmp(line, "LOCK") == 0) {
+            game->p2_ready = 1;
+        }
+    } else if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        if (strcmp(line, "LEFT") == 0) {
+            player_move(&game->p2, -1, 0, GRID_WIDTH - 1);
+        } else if (strcmp(line, "RIGHT") == 0) {
+            player_move(&game->p2, 1, 0, GRID_WIDTH - 1);
+        } else if (strcmp(line, "LOCK") == 0) {
+            fire_sudden_death_shot(game, 2);
         }
     } else if (game->phase == PHASE_MOVE && !game->p2.locked) {
         if (strcmp(line, "LEFT") == 0) {
@@ -242,9 +389,9 @@ static void handle_remote_command(GameState *game, const char *line)
             player_lock(&game->p2);
         }
     } else if (game->phase == PHASE_ACTION && !game->p2.locked) {
-        if (strcmp(line, "SHOOT") == 0) {
+        if (strcmp(line, "LEFT") == 0 || strcmp(line, "SHOOT") == 0) {
             player_set_action(&game->p2, ACTION_SHOOT);
-        } else if (strcmp(line, "HEAL") == 0) {
+        } else if (strcmp(line, "RIGHT") == 0 || strcmp(line, "HEAL") == 0) {
             player_set_action(&game->p2, ACTION_HEAL);
         } else if (strcmp(line, "LOCK") == 0) {
             player_lock(&game->p2);
@@ -252,12 +399,39 @@ static void handle_remote_command(GameState *game, const char *line)
     }
 }
 
-static void update_match(GameState *game)
+static void update_match(GameState *game, int delta_ms)
 {
     /* Phase switching is owned by the server and driven by timers or locks. */
     if (game->phase == PHASE_WAITING) {
         if (game->p1_ready && game->p2_ready) {
             game_start_move_phase(game);
+        }
+        return;
+    }
+
+    if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
+        if (game->p1_sudden_death_vote_locked && game->p2_sudden_death_vote_locked) {
+            if (game->p1_sudden_death_vote == 1 && game->p2_sudden_death_vote == 1) {
+                game_start_sudden_death_ready(game);
+            } else {
+                game->sudden_death_declined = 1;
+                game_start_move_phase(game);
+            }
+        }
+        return;
+    }
+
+    if (game->phase == PHASE_SUDDEN_DEATH_READY) {
+        if (game->p1_ready && game->p2_ready) {
+            game_start_sudden_death_battle(game);
+        }
+        return;
+    }
+
+    if (game->phase == PHASE_SUDDEN_DEATH_BATTLE) {
+        game_update_bullets(game, delta_ms);
+        if (game->winner != 0) {
+            game->phase = PHASE_GAME_OVER;
         }
         return;
     }
@@ -277,12 +451,15 @@ static void update_match(GameState *game)
     }
 
     if (game->phase == PHASE_RESOLVE) {
-        game_update_bullets(game);
+        game_update_bullets(game, delta_ms);
 
         if (game->phase_time_ms >= RESOLVE_PHASE_MS) {
             if (game->winner != 0) {
                 game->phase = PHASE_GAME_OVER;
-                game->running = 0;
+            } else if (!game->sudden_death_declined &&
+                       game->p1.hp <= SUDDEN_DEATH_THRESHOLD &&
+                       game->p2.hp <= SUDDEN_DEATH_THRESHOLD) {
+                game_start_sudden_death_offer(game);
             } else {
                 game_start_move_phase(game);
             }
@@ -297,12 +474,13 @@ int start_server(int port)
     int client_fd;
     int keep_running = 1;
     int client_alive = 1;
+    int quit_armed = 0;
     GameState game;
     NetBuffer input_buffer;
     struct timespec last_tick;
-    char line[128];
-    char render_key[256];
-    char last_render_key[256];
+    char line[NET_BUFFER_SIZE];
+    char render_key[1024];
+    char last_render_key[1024];
 
     signal(SIGPIPE, SIG_IGN);
     srand((unsigned int)time(NULL));
@@ -359,7 +537,10 @@ int start_server(int port)
         game.phase_time_ms += delta_ms;
 
         while (key_available()) {
-            handle_local_input(&game, read_key());
+            if (handle_local_input(&game, read_key(), &quit_armed)) {
+                keep_running = 0;
+                break;
+            }
         }
 
         do {
@@ -369,7 +550,6 @@ int start_server(int port)
                 client_alive = 0;
                 game.winner = 1;
                 game.phase = PHASE_GAME_OVER;
-                game.running = 0;
                 break;
             }
         } while (read_status > 0);
@@ -379,25 +559,26 @@ int start_server(int port)
         }
 
         if (game.phase != PHASE_GAME_OVER) {
-            update_match(&game);
+            update_match(&game, delta_ms);
         }
 
         if (client_alive && send_state(client_fd, &game) != 0) {
             client_alive = 0;
             game.winner = 1;
             game.phase = PHASE_GAME_OVER;
-            game.running = 0;
         }
 
         game_build_display_key(&game, 1, render_key, sizeof(render_key));
+        snprintf(render_key + strlen(render_key),
+                 sizeof(render_key) - strlen(render_key),
+                 "|%d",
+                 quit_armed);
         if (strcmp(render_key, last_render_key) != 0) {
-            game_render(&game, 1);
+            game_render(&game, 1, quit_armed);
             strcpy(last_render_key, render_key);
         }
 
-        if (!game.running) {
-            keep_running = 0;
-        } else {
+        if (keep_running) {
             usleep(50000);
         }
     }

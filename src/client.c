@@ -138,94 +138,112 @@ static void render_connecting_screen(const char *host, int port)
     printf("\033[2J\033[H");
     printf("Wild West Quick Draw | Player 2\n");
     printf("Connecting to %s:%d...\n", host, port);
-    printf("Controls: Left/Right Arrow = move | [ = shoot | ] = heal | Space = lock | q = quit\n");
+    printf("Controls: Arrows = move/select | Space = lock/shoot | q = quit\n");
     fflush(stdout);
+}
+
+static int next_state_int(const char **cursor, int *value)
+{
+    char *end;
+    long parsed;
+
+    while (**cursor == ' ') {
+        (*cursor)++;
+    }
+
+    if (**cursor == '\0') {
+        return 0;
+    }
+
+    parsed = strtol(*cursor, &end, 10);
+    if (end == *cursor) {
+        return 0;
+    }
+
+    *value = (int)parsed;
+    *cursor = end;
+    return 1;
 }
 
 static int parse_state_line(GameState *game, const char *line)
 {
     /* Convert the server's text packet back into a local GameState copy. */
-    int phase;
-    int phase_time_ms;
-    int round_number;
-    int winner;
-    int running;
-    int p1_hp;
-    int p2_hp;
-    int p1_col;
-    int p2_col;
-    int p1_potions;
-    int p2_potions;
-    int p1_action;
-    int p2_action;
-    int p1_locked;
-    int p2_locked;
-    int p1_ready;
-    int p2_ready;
-    int p1_result;
-    int p2_result;
-    int bullet1_row;
-    int bullet1_col;
-    int bullet1_active;
-    int bullet2_row;
-    int bullet2_col;
-    int bullet2_active;
+    const char *cursor;
+    int value;
+    int index;
 
-    if (sscanf(line,
-               "STATE %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
-               &phase,
-               &phase_time_ms,
-               &round_number,
-               &winner,
-               &running,
-               &p1_hp,
-               &p2_hp,
-               &p1_col,
-               &p2_col,
-               &p1_potions,
-               &p2_potions,
-               &p1_action,
-               &p2_action,
-               &p1_locked,
-               &p2_locked,
-               &p1_ready,
-               &p2_ready,
-               &p1_result,
-               &p2_result,
-               &bullet1_row,
-               &bullet1_col,
-               &bullet1_active,
-               &bullet2_row,
-               &bullet2_col,
-               &bullet2_active) != 25) {
+    if (strncmp(line, "STATE", 5) != 0) {
         return 0;
     }
 
-    game->phase = (Phase)phase;
-    game->phase_time_ms = phase_time_ms;
-    game->round_number = round_number;
-    game->winner = winner;
-    game->running = running;
-    game->p1.hp = p1_hp;
-    game->p2.hp = p2_hp;
-    game->p1.col = p1_col;
-    game->p2.col = p2_col;
-    game->p1.potions = p1_potions;
-    game->p2.potions = p2_potions;
-    game->p1.action = (Action)p1_action;
-    game->p2.action = (Action)p2_action;
-    game->p1.locked = p1_locked;
-    game->p2.locked = p2_locked;
-    game->p1_ready = p1_ready;
-    game->p2_ready = p2_ready;
-    game->p1_result = (ResolveResult)p1_result;
-    game->p2_result = (ResolveResult)p2_result;
-    game->bullet1_row = bullet1_row;
-    game->bullet1_col = bullet1_col;
-    game->bullet1_active = bullet1_active;
-    game->bullet2_row = bullet2_row;
-    game->bullet2_col = bullet2_col;
-    game->bullet2_active = bullet2_active;
+    cursor = line + 5;
+
+#define READ_STATE_INT(target)       \
+    do {                             \
+        if (!next_state_int(&cursor, &value)) { \
+            return 0;                \
+        }                            \
+        (target) = value;            \
+    } while (0)
+
+    READ_STATE_INT(value);
+    game->phase = (Phase)value;
+    READ_STATE_INT(game->phase_time_ms);
+    READ_STATE_INT(game->round_number);
+    READ_STATE_INT(game->winner);
+    READ_STATE_INT(game->running);
+    READ_STATE_INT(game->p1.hp);
+    READ_STATE_INT(game->p2.hp);
+    READ_STATE_INT(game->p1.col);
+    READ_STATE_INT(game->p2.col);
+    READ_STATE_INT(game->p1.potions);
+    READ_STATE_INT(game->p2.potions);
+    READ_STATE_INT(value);
+    game->p1.action = (Action)value;
+    READ_STATE_INT(value);
+    game->p2.action = (Action)value;
+    READ_STATE_INT(game->p1.locked);
+    READ_STATE_INT(game->p2.locked);
+    READ_STATE_INT(game->p1_ready);
+    READ_STATE_INT(game->p2_ready);
+    READ_STATE_INT(value);
+    game->p1_result = (ResolveResult)value;
+    READ_STATE_INT(value);
+    game->p2_result = (ResolveResult)value;
+    READ_STATE_INT(game->bullet1_row);
+    READ_STATE_INT(game->bullet1_col);
+    READ_STATE_INT(game->bullet1_active);
+    READ_STATE_INT(game->bullet2_row);
+    READ_STATE_INT(game->bullet2_col);
+    READ_STATE_INT(game->bullet2_active);
+    READ_STATE_INT(game->p1_sudden_death_vote);
+    READ_STATE_INT(game->p2_sudden_death_vote);
+    READ_STATE_INT(game->p1_sudden_death_vote_locked);
+    READ_STATE_INT(game->p2_sudden_death_vote_locked);
+    READ_STATE_INT(game->sudden_death_declined);
+    READ_STATE_INT(game->p1_ammo);
+    READ_STATE_INT(game->p2_ammo);
+    READ_STATE_INT(game->p1_reload_ms);
+    READ_STATE_INT(game->p2_reload_ms);
+    READ_STATE_INT(game->p1_bullet_step_ms);
+    READ_STATE_INT(game->p2_bullet_step_ms);
+    READ_STATE_INT(game->p1_damage_feedback);
+    READ_STATE_INT(game->p2_damage_feedback);
+    READ_STATE_INT(game->p1_damage_feedback_ms);
+    READ_STATE_INT(game->p2_damage_feedback_ms);
+
+    for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
+        READ_STATE_INT(game->p1_sd_bullet_row[index]);
+        READ_STATE_INT(game->p1_sd_bullet_col[index]);
+        READ_STATE_INT(game->p1_sd_bullet_active[index]);
+        READ_STATE_INT(game->p1_sd_bullet_step_ms[index]);
+        READ_STATE_INT(game->p2_sd_bullet_row[index]);
+        READ_STATE_INT(game->p2_sd_bullet_col[index]);
+        READ_STATE_INT(game->p2_sd_bullet_active[index]);
+        READ_STATE_INT(game->p2_sd_bullet_step_ms[index]);
+    }
+
+#undef READ_STATE_INT
 
     return 1;
 }
@@ -236,12 +254,13 @@ int main(int argc, char **argv)
     int socket_fd;
     int port = DEFAULT_PORT;
     int keep_running = 1;
+    int quit_armed = 0;
     int have_state = 0;
     NetBuffer buffer;
     GameState game;
-    char line[128];
-    char render_key[256];
-    char last_render_key[256];
+    char line[NET_BUFFER_SIZE];
+    char render_key[1024];
+    char last_render_key[1024];
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <server-ip> [port]\n", argv[0]);
@@ -280,6 +299,30 @@ int main(int argc, char **argv)
         while (key_available()) {
             int key = read_key();
 
+            if (key == KEY_QUIT) {
+                if (!quit_armed) {
+                    quit_armed = 1;
+                    continue;
+                }
+
+                quit_armed = 0;
+
+                if (have_state && (game.phase == PHASE_WAITING || game.phase == PHASE_GAME_OVER)) {
+                    send_text(socket_fd, "QUIT\n");
+                    keep_running = 0;
+                    break;
+                }
+
+                if (send_text(socket_fd, "QUIT\n") != 0) {
+                    keep_running = 0;
+                    break;
+                }
+
+                continue;
+            }
+
+            quit_armed = 0;
+
             if (key == KEY_LEFT) {
                 if (send_text(socket_fd, "LEFT\n") != 0) {
                     keep_running = 0;
@@ -305,10 +348,6 @@ int main(int argc, char **argv)
                     keep_running = 0;
                     break;
                 }
-            } else if (key == KEY_QUIT) {
-                send_text(socket_fd, "QUIT\n");
-                keep_running = 0;
-                break;
             }
         }
 
@@ -329,13 +368,13 @@ int main(int argc, char **argv)
 
         if (have_state) {
             game_build_display_key(&game, 2, render_key, sizeof(render_key));
+            snprintf(render_key + strlen(render_key),
+                     sizeof(render_key) - strlen(render_key),
+                     "|%d",
+                     quit_armed);
             if (strcmp(render_key, last_render_key) != 0) {
-                game_render(&game, 2);
+                game_render(&game, 2, quit_armed);
                 strcpy(last_render_key, render_key);
-            }
-
-            if (!game.running) {
-                keep_running = 0;
             }
         }
 

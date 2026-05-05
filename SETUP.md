@@ -4,48 +4,64 @@
 
 - Ubuntu/Linux or macOS
 - `gcc`
-- For network play: both PCs on the same network
+- `make`
+- For two-machine play: both machines must be on the same network
 - The server machine must allow inbound TCP traffic on the chosen port
+
+No `figlet` install is required. `figlet` was only used during development to generate the banner text. The generated banners were copied and adapted into C string arrays, so the game can build and run without installing `figlet`.
 
 ## Build
 
+From the project folder:
+
 ```bash
-cd wildwest
 make
 ```
 
-This builds:
+This creates:
 
 - `./server`
 - `./client`
 
-## Local Run On One Mac
+If you want to rebuild everything from scratch:
+
+```bash
+make -B
+```
+
+## Run On One Mac Or One Linux Machine
+
+Open two terminal windows.
 
 Terminal 1:
 
 ```bash
-cd "/Users/austin/Documents/New project/wildwest"
+cd path/to/wildwest
 ./server
 ```
 
 Terminal 2:
 
 ```bash
-cd "/Users/austin/Documents/New project/wildwest"
+cd path/to/wildwest
 ./client 127.0.0.1
 ```
 
-## Network Run On Two PCs
+Replace `path/to/wildwest` with the actual folder path where you downloaded or cloned the project.
+
+## Run On Two Networked Machines
 
 ### PC 1: Server
 
-Find the server IP:
+Find the server IP address.
+
+Ubuntu/Linux:
 
 ```bash
 ip addr
 ```
 
-On macOS:
+macOS:
 
 ```bash
 ifconfig
@@ -65,7 +81,7 @@ Optional custom port:
 
 ### PC 2: Client
 
-Connect using the server IP:
+Connect using the server machine IP address:
 
 ```bash
 ./client <server-ip>
@@ -83,44 +99,96 @@ Optional custom port:
 ./client 192.168.1.25 51717
 ```
 
+The client must use the same port as the server.
+
 ## Controls
 
-- `Left Arrow` = move left in move phase
-- `Right Arrow` = move right in move phase
-- `[` = select `SHOOT` in action phase
-- `]` = select `HEAL` in action phase
-- `Space` = lock / commit
-- `q` = quit
+Start screen:
+
+- `Space` = ready
+- `q` twice = quit directly
+
+Move phase:
+
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = lock position
+
+Action phase:
+
+- `Left Arrow` = select `SHOOT`
+- `Right Arrow` = select `HEAL`
+- `Space` = lock action
+
+Sudden death vote:
+
+- `Left Arrow` = vote `YES`
+- `Right Arrow` = vote `NO`
+- `Space` = lock vote
+
+Sudden death battle:
+
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = shoot
+
+General:
+
+- `q` twice = quit
 
 ## Match Flow
 
-0. Ready phase
-- Press `Space` to mark yourself ready
-- The match starts only when both players are ready
+1. Start screen
 
-1. Move phase
-- 15 seconds to choose and lock a position
-- Enemy position is hidden
-- Press `Space` to lock your position early
+- Both players press `Space`.
+- The game starts only when both players are ready.
+- If you quit here, the program exits directly without showing the arena.
 
-2. Action phase
-- 10 seconds to choose an action
-- Enemy position is still hidden
-- `[` selects `SHOOT`
-- `]` selects `HEAL`
-- Press `Space` to lock your action early
+2. Move phase
 
-3. Resolve phase
-- Enemy position is revealed
-- Both locked actions resolve
-- Shot hit deals `20` damage
-- Critical hit deals `30` damage
-- Miss deals `10` self-damage
-- Heal restores `30` HP and uses `1` potion
-- Each player starts with `3` potions
+- 15 seconds to choose and lock a lane.
+- Enemy position is hidden.
+- Press `Space` to lock early.
 
-## Notes
+3. Action phase
 
-- Same port number alone does not connect two machines.
-- The client must use the server machine IP address and the same port.
-- If the client cannot connect, check firewall rules and confirm both machines are on the same network.
+- 10 seconds to choose `SHOOT` or `HEAL`.
+- Enemy action is hidden.
+- Press `Space` to lock early.
+
+4. Resolve phase
+
+- Enemy position is revealed.
+- Locked actions resolve.
+- Shot hit deals `20` damage.
+- Critical hit deals `30` damage.
+- Miss deals `10` self-damage.
+- Heal restores `30` HP and uses `1` potion.
+
+5. Sudden death offer
+
+- If both players are at `20` HP or below and no winner exists, both players vote.
+- Both must vote `YES` to enter sudden death.
+- If either player votes `NO`, the normal game continues.
+
+6. Sudden death ready
+
+- HP resets to `100`.
+- Ammo resets to `5`.
+- Both players press `Space` when ready.
+
+7. Sudden death battle
+
+- Both players are visible.
+- Players move left or right and shoot with `Space`.
+- Bullets deal `10` damage.
+- Ammo reloads to `5` after `2` seconds when empty.
+- First player to kill the opponent wins.
+
+## Troubleshooting
+
+- If the client cannot connect, confirm both machines are on the same network.
+- Confirm the client is using the server machine IP address.
+- Confirm both sides use the same port.
+- Check firewall settings on the server machine.
+- If terminal rendering looks broken, increase the terminal window size.
