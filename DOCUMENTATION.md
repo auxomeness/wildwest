@@ -2,35 +2,16 @@
 
 ## Overview
 
-This project is a two-player terminal duel written in C. One process runs as the server, one process runs as the client. The server owns the real game state, timers, phase changes, damage, healing, crit checks, and winner detection. The client does not simulate the match by itself. It sends input commands to the server and renders the latest state snapshot it receives back.
+Wild West Quick Draw is a two-player terminal duel written in C.
 
-The match is phase-based:
+The game runs as two programs:
 
-1. `WAITING`
-- Both players press `Space` to mark themselves ready.
-- The game does not start until both sides are ready.
+- `server`: Player 1 and the authoritative game loop.
+- `client`: Player 2, connected to the server through TCP.
 
-2. `MOVE`
-- Players have 15 seconds to choose a lane.
-- Enemy position is hidden.
-- `Left Arrow` and `Right Arrow` move the player.
-- `Space` locks the position early.
+The server owns the real state. It controls timers, phase changes, shots, healing, crit chance, sudden death, winner checks, and the state packet sent to the client. The client sends input commands and renders the latest state packet it receives.
 
-3. `ACTION`
-- Players have 10 seconds to choose an action.
-- Enemy position is still hidden.
-- `[` selects `SHOOT`.
-- `]` selects `HEAL`.
-- `Space` locks the action early.
-
-4. `RESOLVE`
-- Enemy position is revealed.
-- Locked actions are applied.
-- Shots can hit, crit, or miss.
-- Misses backfire and can kill the shooter.
-
-5. `GAME OVER`
-- The winner or draw is shown.
+This design keeps the game from desyncing. There is one source of truth: the server.
 
 ## Folder Structure
 
@@ -49,96 +30,181 @@ wildwest/
 │   ├── player.c
 │   └── server.c
 ├── makefile
+├── README.md
 ├── SETUP.md
 └── DOCUMENTATION.md
 ```
 
-### What each area is for
+## Build Output
 
-`include/`
-- Header files.
-- These define shared constants, structs, enums, and function declarations.
-- The `.c` files include these headers so the compiler knows what each module exposes.
+The makefile builds two binaries:
 
-`src/`
-- Source files.
-- This is where the implementation lives.
+- `server`
+- `client`
 
-`makefile`
-- Build rules for `server` and `client`.
-
-`SETUP.md`
-- Run instructions.
-
-`DOCUMENTATION.md`
-- This document.
-
-## Build Layout
-
-The project builds two binaries:
-
-`server`
-- Compiled from `src/main.c`, `src/server.c`, and the shared source files.
-- Runs the authoritative match loop.
-
-`client`
-- Compiled from `src/client.c` and the shared source files.
-- Connects to the server and renders the remote match.
-
-The `makefile` uses `-Iinclude`, which tells the compiler to search the `include/` folder for headers. That is why the source code uses:
+The compiler uses `-Iinclude`, so source files can write:
 
 ```c
 #include "game.h"
 ```
 
-and not:
+instead of hardcoding the folder path.
 
-```c
-#include "./include/game.h"
-```
+## Match Phases
 
-## Runtime Architecture
+### `WAITING`
 
-The match is server-authoritative.
+This is the start screen.
 
-### Server responsibilities
+- Both players see the `WILD WEST` title.
+- Both players press `Space` to get ready.
+- The battlefield is not drawn yet.
+- Pressing `q` twice exits directly from this screen.
 
-- Accept one client connection.
-- Read local keyboard input for Player 1.
-- Read remote commands from Player 2.
-- Advance timers.
-- Switch phases.
-- Resolve shots, heals, crits, and misses.
-- Detect winners.
-- Send the full game state to the client.
+### `MOVE`
 
-### Client responsibilities
+Both players choose a lane.
 
-- Read local keyboard input for Player 2.
-- Send text commands to the server.
-- Receive the latest game state from the server.
-- Render the state exactly as received.
+- Timer: `15` seconds.
+- Enemy position is hidden.
+- `Left Arrow` moves left.
+- `Right Arrow` moves right.
+- `Space` locks the position.
 
-### Why this split matters
+### `ACTION`
 
-Only one process decides what is true. That avoids desync between players. The client is a terminal frontend with input handling and rendering, not a second game simulation.
+Both players choose what to do.
+
+- Timer: `10` seconds.
+- Enemy action is hidden.
+- `Left Arrow` selects `SHOOT`.
+- `Right Arrow` selects `HEAL`.
+- `Space` locks the action.
+
+### `RESOLVE`
+
+The round resolves.
+
+- Enemy position is revealed.
+- Shooting and healing are applied.
+- Bullet animation is shown.
+- Damage feedback appears beside the damaged player.
+
+### `SUDDEN_DEATH_OFFER`
+
+This phase starts only if both players are at `20` HP or below and nobody has won yet.
+
+- `Left Arrow` votes `YES`.
+- `Right Arrow` votes `NO`.
+- `Space` locks the vote.
+- Both players must vote `YES` to enter sudden death.
+- If either player votes `NO`, the normal game continues.
+
+### `SUDDEN_DEATH_READY`
+
+Both players prepare for sudden death.
+
+- HP resets to `100`.
+- Ammo resets to `5`.
+- Both players press `Space`.
+
+### `SUDDEN_DEATH_BATTLE`
+
+Sudden death is live.
+
+- Both players are visible.
+- Arena height is the same as the normal game arena.
+- `Left Arrow` and `Right Arrow` move.
+- `Space` shoots.
+- Ammo starts at `5`.
+- Ammo reloads to `5` after `2` seconds when empty.
+- Bullet damage is `10`.
+- First player to kill the opponent wins.
+
+### `GAME_OVER`
+
+The result banner is displayed.
+
+- Winner sees `WINNER`.
+- Loser sees `LOSER`.
+- Draw shows `DRAW`.
+- Press `q` twice to exit.
+
+## Current Controls
+
+Start screen:
+
+- `Space` = ready
+- `q` twice = quit directly
+
+Move phase:
+
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = lock position
+
+Action phase:
+
+- `Left Arrow` = select `SHOOT`
+- `Right Arrow` = select `HEAL`
+- `Space` = lock action
+
+Sudden death vote:
+
+- `Left Arrow` = vote `YES`
+- `Right Arrow` = vote `NO`
+- `Space` = lock vote
+
+Sudden death battle:
+
+- `Left Arrow` = move left
+- `Right Arrow` = move right
+- `Space` = shoot
+
+General:
+
+- `q` twice = quit
+
+## Combat Rules
+
+Normal combat:
+
+- Shot hit deals `20` damage.
+- Critical hit deals `30` damage.
+- Miss backfires and deals `10` self-damage.
+- Miss backfire can kill the shooter.
+- Heal restores `30` HP.
+- Heal uses `1` potion.
+- Each player starts with `3` potions.
+
+Critical chance:
+
+- Each player starts with `12%` crit chance.
+- If a shot hits but does not crit, crit chance increases.
+- If a shot crits, crit chance resets to the default.
+
+Sudden death:
+
+- HP resets to `100`.
+- Ammo starts at `5`.
+- Bullet damage is `10`.
+- Ammo reloads after `2` seconds when empty.
+- Multiple bullets can exist at the same time.
 
 ## Header Files
 
 ### `include/player.h`
 
-This file defines player-specific state and the result labels used during resolve.
-
-#### Enums
+This file defines player-level data.
 
 `Action`
+
 - `ACTION_NONE`
 - `ACTION_SHOOT`
 - `ACTION_HEAL`
 
-Used during the action phase to describe what a player locked in.
-
 `ResolveResult`
+
 - `RESULT_NONE`
 - `RESULT_SHOT_HIT`
 - `RESULT_SHOT_CRIT`
@@ -146,639 +212,669 @@ Used during the action phase to describe what a player locked in.
 - `RESULT_HEAL`
 - `RESULT_HEAL_FAIL`
 
-Used to describe what happened after actions were resolved.
-
-#### Struct
-
 `Player`
-- `col`
-  Current horizontal position inside the arena.
-- `hp`
-  Current health.
-- `potions`
-  Remaining heals.
-- `crit_chance`
-  Percent chance for a critical hit.
-- `action`
-  Current selected action for the action phase.
-- `locked`
-  Whether the player already locked input for the current phase.
 
-#### Functions
-
-`player_init`
-- Sets the starting stats for a player.
-
-`player_move`
-- Moves left or right but clamps the result inside the arena width.
-
-`player_lock` / `player_unlock`
-- Marks the player as done or not done for the current phase.
-
-`player_clear_action`
-- Resets action to `ACTION_NONE`.
-
-`player_set_action`
-- Sets the selected action to `SHOOT` or `HEAL`.
-
-`player_apply_shot`
-- Resolves a shot against a target.
-- Hit deals 20 damage.
-- Crit deals 30 damage.
-- Miss deals 10 self-damage.
-- A miss can kill the shooter.
-
-`player_apply_heal`
-- Resolves healing.
-- Only works if the player has potions left and is not already at full HP.
+- `col`: current lane.
+- `hp`: current health.
+- `potions`: remaining heals.
+- `crit_chance`: current critical-hit chance.
+- `action`: selected action.
+- `locked`: whether the player already committed in the current phase.
 
 ### `include/game.h`
 
-This file defines all shared game constants and the full replicated match state.
+This file defines shared constants, phases, and the full replicated game state.
 
-#### Important constants
+Important constants:
 
-`DEFAULT_PORT`
-- Default TCP port.
-
-`GRID_HEIGHT`
-- Current visible arena height.
-
-`GRID_WIDTH`
-- Number of lanes.
-
-`PLAYER1_ROW`
-- Row used by Player 1.
-
-`PLAYER2_ROW`
-- Row used by Player 2.
-
-`MAX_HP`
-- Maximum health cap.
-
-`MAX_POTIONS`
-- Starting and maximum number of potions.
-
-`SHOT_DAMAGE`
-- Normal hit damage.
-
-`CRIT_DAMAGE`
-- Critical hit damage.
-
-`MISS_DAMAGE`
-- Self-damage on a missed shot.
-
-`HEAL_AMOUNT`
-- Health restored by a successful heal.
-
-`DEFAULT_CRIT_CHANCE`
-- Starting critical-hit chance.
-
-`MOVE_PHASE_MS`
-- Move timer in milliseconds.
-
-`ACTION_PHASE_MS`
-- Action timer in milliseconds.
-
-`RESOLVE_PHASE_MS`
-- Resolve animation time in milliseconds.
-
-#### Enum
-
-`Phase`
-- `PHASE_WAITING`
-- `PHASE_MOVE`
-- `PHASE_ACTION`
-- `PHASE_RESOLVE`
-- `PHASE_GAME_OVER`
-
-This tells both terminals which part of the match is active.
-
-#### Struct
+- `DEFAULT_PORT`: default TCP port.
+- `GRID_HEIGHT`: arena height.
+- `GRID_WIDTH`: number of lanes.
+- `MAX_HP`: health cap.
+- `MAX_POTIONS`: starting potion count.
+- `SHOT_DAMAGE`: normal hit damage.
+- `CRIT_DAMAGE`: critical hit damage.
+- `MISS_DAMAGE`: self-damage on miss.
+- `HEAL_AMOUNT`: healing amount.
+- `SUDDEN_DEATH_THRESHOLD`: HP threshold for sudden death offer.
+- `SUDDEN_DEATH_MAX_AMMO`: sudden death ammo cap.
+- `SUDDEN_DEATH_RELOAD_MS`: reload time.
+- `SUDDEN_DEATH_DAMAGE`: sudden death bullet damage.
 
 `GameState`
-- `p1`, `p2`
-  Full state for both players.
-- `p1_ready`, `p2_ready`
-  Ready-up flags before the duel starts.
-- `p1_result`, `p2_result`
-  Result labels for the last resolve.
-- `bullet1_row`, `bullet1_col`, `bullet1_active`
-  Temporary animation state for Player 1's shot.
-- `bullet2_row`, `bullet2_col`, `bullet2_active`
-  Temporary animation state for Player 2's shot.
-- `phase`
-  Current game phase.
-- `phase_time_ms`
-  Time elapsed in the current phase.
-- `round_number`
-  Current round number.
-- `winner`
-  `0` means no winner yet, `1` means Player 1, `2` means Player 2, `3` means draw.
-- `running`
-  Whether the match is still active.
 
-#### Functions
-
-`game_init`
-- Creates the initial waiting state.
-
-`game_start_move_phase`
-- Resets round state and starts a new move phase.
-
-`game_start_action_phase`
-- Opens the action phase and defaults both actions to `SHOOT`.
-
-`game_start_resolve_phase`
-- Applies actions and begins the resolve animation.
-
-`game_update_bullets`
-- Advances bullet sprites while in resolve.
-
-`game_phase_time_limit`
-- Returns the duration for the given phase.
-
-`game_countdown_seconds`
-- Converts remaining milliseconds into a user-facing countdown number.
-
-`game_phase_label`
-- Returns the text label for a phase.
-
-`game_action_label`
-- Returns the text label for an action.
-
-`game_result_label`
-- Returns the text label for a resolve result.
-
-`game_build_display_key`
-- Produces a compact summary of the current visible frame.
-- Used to avoid re-rendering identical screens.
-
-`game_render`
-- Draws one full terminal frame from the perspective of one player.
+- `p1`, `p2`: the two players.
+- `p1_ready`, `p2_ready`: ready flags.
+- `p1_result`, `p2_result`: last resolve results.
+- `bullet1_row`, `bullet1_col`, `bullet1_active`: normal resolve bullet for Player 1.
+- `bullet2_row`, `bullet2_col`, `bullet2_active`: normal resolve bullet for Player 2.
+- `p1_sudden_death_vote`, `p2_sudden_death_vote`: sudden death choices.
+- `p1_sudden_death_vote_locked`, `p2_sudden_death_vote_locked`: vote locks.
+- `sudden_death_declined`: prevents asking again after a `NO`.
+- `p1_ammo`, `p2_ammo`: sudden death ammo.
+- `p1_reload_ms`, `p2_reload_ms`: reload timers.
+- `p1_damage_feedback`, `p2_damage_feedback`: damage text shown beside players.
+- `p1_sd_bullet_*`, `p2_sd_bullet_*`: sudden death bullet pools.
+- `phase`: current phase.
+- `phase_time_ms`: time spent in the current phase.
+- `round_number`: current round.
+- `winner`: `0` none, `1` Player 1, `2` Player 2, `3` draw.
+- `running`: match running flag.
 
 ### `include/network.h`
 
-This file contains the socket helper interface.
-
-#### Struct
+This file defines socket helpers and the line buffer.
 
 `NetBuffer`
-- `data`
-  Raw byte buffer for incoming text.
-- `used`
-  Number of bytes currently stored.
 
-#### Functions
+- `data`: incoming bytes.
+- `used`: number of bytes stored.
 
-`create_server`
-- Opens, binds, and listens on a TCP socket.
-
-`accept_client`
-- Waits for one client connection.
-
-`create_client`
-- Connects to the server by IP address and port.
-
-`set_nonblocking`
-- Turns a socket into nonblocking mode.
-
-`send_all`
-- Keeps sending until the whole buffer has been written.
-
-`send_text`
-- Convenience wrapper for sending null-terminated text.
-
-`net_buffer_init`
-- Clears the input buffer.
-
-`net_read_into_buffer`
-- Reads raw bytes from a socket into the buffer.
-
-`net_next_line`
-- Extracts one newline-terminated message from the buffer.
+The state packet is text-based, so the buffer waits until a full line arrives.
 
 ### `include/server.h`
 
-This file only exposes one function:
+This file exposes:
 
-`start_server`
-- Starts the server process and enters the full authoritative game loop.
+- `start_server`
 
 ## Source Files
 
 ### `src/main.c`
 
-This is the entry point for the server binary.
+Entry point for the server binary.
 
-#### How it runs
+It reads an optional port argument and calls:
 
-1. Start with `DEFAULT_PORT`.
-2. If the user passed a numeric argument, use that as the port.
-3. Call `start_server(port)`.
-
-This file stays small on purpose. All real match logic is kept in `server.c`.
+```c
+start_server(port);
+```
 
 ### `src/player.c`
 
 This file handles player-specific rules.
 
-#### `player_init`
+`player_init`
 
-Sets:
-- starting column
-- 100 HP
-- 3 potions
-- default crit chance
-- no action selected
-- unlocked state
+- Sets start column.
+- Sets HP to `100`.
+- Sets potions to `3`.
+- Sets default crit chance.
+- Clears action and lock state.
 
-#### `player_move`
+`player_move`
 
-Applies horizontal movement and clamps it between the minimum and maximum lane.
+- Moves left or right.
+- Clamps the player inside the arena.
 
-#### `player_apply_shot`
+`player_lock` and `player_unlock`
 
-Rules:
-- If the player did not choose `SHOOT`, nothing happens.
-- If both players are in the same column:
-  - roll crit chance
-  - crit deals 30
-  - normal hit deals 20
-- If the shot misses:
-  - shooter takes 10 backfire damage
-  - this can reduce HP to 0
+- Commit or clear phase lock state.
 
-#### `player_apply_heal`
+`player_clear_action`
 
-Rules:
-- Only works if action is `HEAL`
-- Fails if:
-  - player is already dead
-  - no potions remain
-  - HP is already full
-- Success:
-  - heal 30
-  - clamp to 100
-  - spend one potion
+- Resets action to `ACTION_NONE`.
+
+`player_set_action`
+
+- Sets action to `SHOOT` or `HEAL`.
+
+`player_apply_shot`
+
+- Checks if the shooter chose `SHOOT`.
+- If columns match, applies hit or crit damage.
+- If columns do not match, applies miss backfire damage.
+
+`player_apply_heal`
+
+- Checks if healing is allowed.
+- Restores HP.
+- Spends one potion.
 
 ### `src/game.c`
 
-This file owns the gameplay state transitions and the renderer.
+This file owns game state transitions and terminal rendering.
 
-#### Internal helpers
+Important internal helpers:
 
-`clear_bullets`
-- Clears bullet animation state.
+- `clear_bullets`: clears normal bullet animation.
+- `clear_sudden_death_bullets`: clears sudden death bullet pools.
+- `clear_damage_feedback`: removes damage popup text.
+- `add_damage_feedback`: stores damage text for a player.
+- `update_winner`: calculates winner or draw.
+- `local_player`: returns the player for the current terminal perspective.
+- `enemy_player`: returns the opponent for the current terminal perspective.
 
-`clear_results`
-- Clears last resolve messages.
+Phase functions:
 
-`update_winner`
-- Evaluates the winner after actions are applied.
+- `game_init`
+- `game_start_move_phase`
+- `game_start_action_phase`
+- `game_start_resolve_phase`
+- `game_start_sudden_death_offer`
+- `game_start_sudden_death_ready`
+- `game_start_sudden_death_battle`
 
-`local_player`, `enemy_player`
-- Return which `Player` struct should be treated as self or enemy for the current terminal.
+Rendering functions:
 
-`local_result`, `enemy_result`
-- Same idea, but for resolve results.
+- `game_build_display_key`: builds a compact visible-state key.
+- `game_render`: draws the current frame.
 
-#### Match lifecycle
+The renderer:
 
-`game_init`
-- Builds the initial waiting screen.
-- No round starts yet.
+- Uses the alternate terminal screen.
+- Draws a figlet-style start banner.
+- Draws boxed headers and battlefield.
+- Hides enemy position during `MOVE` and `ACTION`.
+- Hides enemy action during `ACTION`.
+- Shows HP bars, HP percentage, potions, or ammo.
+- Shows damage feedback beside the player when damage is applied.
 
-`game_start_move_phase`
-- Clears old actions, results, and bullet trails.
-- Unlocks both players.
-- Resets ready flags.
-- Starts the next round and increments `round_number`.
+#### Banner text and figlet
 
-`game_start_action_phase`
-- Defaults both actions to `SHOOT`.
-- Unlocks both players.
-- Starts the action timer.
+The large title, sudden death, winner, loser, and draw banners were made with `figlet` during development.
 
-`game_start_resolve_phase`
-- Applies the locked actions using the locked positions.
-- Spawns bullet animations if a player chose `SHOOT`.
-- Applies shot damage and heal logic.
-- Updates the winner flag.
+The important part is that `figlet` is not used at runtime.
 
-`game_update_bullets`
-- Moves bullet sprites one row per update during resolve.
+The workflow was:
 
-#### Rendering
+1. Generate banner text with `figlet`.
+2. Review which font style looked readable in the terminal.
+3. Copy the generated ASCII output into C string arrays.
+4. Print those arrays from `game.c`.
 
-`game_build_display_key`
-- Builds a visibility key based on the current player perspective.
-- The server and client use this to skip redundant redraws.
-
-`game_render`
-- Clears the terminal frame.
-- Prints the header.
-- Prints the boxed arena.
-- Hides enemy position outside of resolve and game over.
-- Prints phase-specific instructions below the arena.
-- Prints the action selector below the frame during action phase.
+Because the generated text is already stored in the source code, a new machine does not need to install `figlet` to build or run the game. `figlet` was only a development helper, not a project dependency.
 
 ### `src/network.c`
 
-This file handles socket setup and line-based transport.
+This file handles TCP setup and line-based transport.
 
-#### `create_server`
+`create_server`
 
-Creates a TCP socket and prepares it to accept one client.
+- Creates a socket.
+- Enables address reuse.
+- Binds to the port.
+- Starts listening.
 
-Important system calls:
-- `socket`
-- `setsockopt`
-- `bind`
-- `listen`
+`accept_client`
 
-#### `create_client`
+- Waits for one client.
 
-Creates a TCP socket and connects to the server IP and port.
+`create_client`
 
-Important system calls:
-- `socket`
-- `inet_pton`
-- `connect`
+- Converts the server IP string.
+- Connects to the server.
 
-#### `set_nonblocking`
+`set_nonblocking`
 
-Uses `fcntl` so reads and writes do not stall the game loop.
+- Makes sockets nonblocking with `fcntl`.
 
-#### `send_all`
+`send_all`
 
-Handles partial writes. This matters because socket sends are not guaranteed to write the whole buffer in one call.
+- Sends until the whole buffer has been written.
 
-#### `net_read_into_buffer`
+`send_text`
 
-Reads raw socket bytes into `NetBuffer` and keeps enough state to handle partial lines.
+- Sends a null-terminated string.
 
-#### `net_next_line`
+`net_read_into_buffer`
 
-Extracts one line ending in `\n`, copies it out, and compacts the buffer.
+- Reads socket bytes into `NetBuffer`.
 
-This is why the protocol is line-based instead of binary.
+`net_next_line`
+
+- Extracts one complete line from `NetBuffer`.
 
 ### `src/server.c`
 
-This is the main runtime for the server binary.
+This is the authoritative runtime.
 
-#### Terminal handling
+Terminal functions:
 
-`enable_raw_mode`
-- Disables canonical input and echo.
-- Enters the alternate screen buffer.
-- Hides the cursor.
+- `enable_raw_mode`
+- `disable_raw_mode`
+- `enable_ui_mode`
+- `disable_ui_mode`
 
-`restore_terminal`
-- Restores cooked mode.
-- Returns to the normal terminal screen.
-- Shows the cursor again.
+These keep terminal input immediate and prevent the game from filling normal scrollback.
 
-This is what prevents frame-by-frame rendering from polluting scrollback while the game is running.
+Input helpers:
 
-#### Input handling
+- `key_available`
+- `read_key`
 
-`key_available`
-- Checks whether a key is waiting without blocking.
+State/network helpers:
 
-`read_key`
-- Converts raw input bytes into input tokens.
+- `send_state`: serializes `GameState`.
+- `fire_sudden_death_shot`: creates a sudden death bullet if ammo is available.
 
-Accepted keys:
-- `Left Arrow`
-- `Right Arrow`
-- `Space`
-- `q`
-- `[`
-- `]`
+Main game handlers:
 
-#### State serialization
-
-`send_state`
-- Packs the current `GameState` into one text line.
-- Sends it to the client every server tick.
-
-#### Input application
-
-`handle_local_input`
-- Applies Player 1 input directly to the authoritative state.
-
-`handle_remote_command`
-- Applies Player 2 commands that arrived from the client.
-
-#### Match control
-
-`update_match`
-- Controls phase transitions:
-  - waiting to move when both are ready
-  - move to action on both locks or timer expiry
-  - action to resolve on both locks or timer expiry
-  - resolve to next round or game over after the resolve timer
-
-#### Main loop
-
-`start_server`
-
-Flow:
-
-1. Ignore `SIGPIPE`
-2. Seed the random number generator for crits
-3. Create the listening socket
-4. Accept one client
-5. Set the client socket to nonblocking
-6. Enable raw terminal mode
-7. Initialize game state
-8. Loop:
-   - compute frame delta
-   - read local keyboard input
-   - read remote commands
-   - update the match
-   - send state to the client
-   - render only when the visible frame changed
+- `handle_local_input`: applies Player 1 keyboard input.
+- `handle_remote_command`: applies Player 2 network commands.
+- `update_match`: advances phases and timers.
+- `start_server`: owns the main loop.
 
 ### `src/client.c`
 
-This is the runtime for the remote player.
+This is Player 2's runtime.
 
-It mirrors the terminal behavior of the server:
-- raw mode
-- alternate screen
-- hidden cursor
-- nonblocking keyboard polling
+It does not resolve game rules. It only:
 
-#### `render_connecting_screen`
+- reads Player 2 keyboard input
+- sends commands to the server
+- receives state packets
+- parses state packets
+- renders the latest state
 
-Shows a temporary screen before the client receives the first full state.
+Important functions:
 
-#### `parse_state_line`
+- `render_connecting_screen`
+- `parse_state_line`
+- `main`
 
-Parses the server's text packet back into a local `GameState`.
+## How The Code Works Internally
 
-The client does not decide what the game state should be. It only displays what the server sent.
+This section explains the logic behind the code, not just what each file contains.
 
-#### `main`
+### Why the project is split this way
 
-Flow:
+The code is separated by responsibility.
 
-1. Read server IP and optional port from the command line
-2. Connect to the server
-3. Set the socket to nonblocking
-4. Enable raw mode and alternate screen
-5. Loop:
-   - read keyboard input
-   - convert it into text commands
-   - send commands to the server
-   - receive state packets
-   - parse the latest packet
-   - render only when the visible frame changed
+`player.c` only knows player rules.
+
+- It does not know sockets.
+- It does not know terminal rendering.
+- It does not know match phases.
+- It only knows how a player moves, shoots, heals, locks, and stores stats.
+
+`game.c` knows match rules and drawing.
+
+- It decides what a phase means.
+- It creates the next phase.
+- It applies combat results.
+- It renders the same state differently depending on player perspective.
+
+`network.c` only knows socket transport.
+
+- It creates sockets.
+- It sends full text buffers.
+- It receives raw bytes.
+- It extracts complete lines.
+
+`server.c` connects everything together.
+
+- It reads Player 1 input.
+- It receives Player 2 input.
+- It updates the authoritative `GameState`.
+- It sends that state to the client.
+
+`client.c` is deliberately weaker than the server.
+
+- It does not decide damage.
+- It does not decide winners.
+- It does not advance phases.
+- It only sends commands and displays the server state.
+
+This is intentional. A multiplayer game needs one authority. Here, that authority is the server.
+
+### How one frame works
+
+Each server loop does the same sequence:
+
+1. Measure elapsed time since the last loop.
+2. Read Player 1 keyboard input.
+3. Read Player 2 commands from the socket.
+4. Apply input to the current phase.
+5. Update timers and phase transitions.
+6. Send the full `GameState` to the client.
+7. Render Player 1's view if the visible state changed.
+8. Sleep briefly to avoid using the CPU constantly.
+
+The client loop is simpler:
+
+1. Read Player 2 keyboard input.
+2. Send input as text commands to the server.
+3. Read state packets from the server.
+4. Parse the latest `STATE` packet.
+5. Render Player 2's view if the visible state changed.
+
+The client never runs `update_match`. That is the server's job.
+
+### How input becomes gameplay
+
+Keyboard input is converted into a small set of internal keys:
+
+- left
+- right
+- space
+- quit
+
+The same key can mean different things depending on phase.
+
+For example, `Left Arrow` means:
+
+- move left during `MOVE`
+- choose `SHOOT` during `ACTION`
+- vote `YES` during `SUDDEN_DEATH_OFFER`
+- move left during `SUDDEN_DEATH_BATTLE`
+
+This is why input handling checks the current phase before applying the command. The command alone is not enough. The phase gives it meaning.
+
+### How the phase system is built
+
+The game is a state machine. The `phase` field decides what rules are active.
+
+The server changes phases through functions such as:
+
+- `game_start_move_phase`
+- `game_start_action_phase`
+- `game_start_resolve_phase`
+- `game_start_sudden_death_offer`
+- `game_start_sudden_death_ready`
+- `game_start_sudden_death_battle`
+
+Each phase-start function resets only the state that belongs to that phase.
+
+For example, `game_start_move_phase` clears old actions, unlocks both players, clears old bullets, and increments the round. It does not reset HP because HP must carry across rounds.
+
+`game_start_sudden_death_ready` does reset HP because sudden death is a separate duel mode where both players restart at `100` HP.
+
+### How timers work
+
+The server records how many milliseconds have passed in the current phase using `phase_time_ms`.
+
+Each loop adds the frame delta to `phase_time_ms`.
+
+The phase changes when either:
+
+- both players lock early
+- the timer reaches the phase limit
+- a sudden-death vote is completed
+- both players are ready
+- a winner exists
+
+Move and action phases have timers. Waiting and game-over do not need countdown timers.
+
+### How hiding information works
+
+The full `GameState` contains both players' positions and actions. The server sends it to the client because the renderer needs one shared structure.
+
+Hidden information is handled inside `game_render`.
+
+During `MOVE` and `ACTION`:
+
+- enemy position is not drawn
+- enemy action is shown as hidden during `ACTION`
+
+During `RESOLVE`, `SUDDEN_DEATH_BATTLE`, and `GAME_OVER`:
+
+- enemy position is visible
+
+This means the data exists, but the display chooses not to show it until the correct phase.
+
+### How normal shooting works
+
+Normal shooting is resolved in `player_apply_shot`.
+
+The logic is:
+
+1. If the player did not choose `SHOOT`, nothing happens.
+2. If both players are in the same lane, the shot hits.
+3. If the shot hits, the game rolls crit chance.
+4. A crit deals `30` damage and resets crit chance.
+5. A non-crit hit deals `20` damage and increases crit chance.
+6. If the players are not aligned, the shot misses.
+7. A miss deals `10` self-damage to the shooter.
+
+Miss damage can kill the shooter. This is why a player can lose by backfire.
+
+### How healing works
+
+Healing is resolved in `player_apply_heal`.
+
+Healing fails if:
+
+- the player is dead
+- the player has no potions
+- the player is already at full HP
+
+If healing succeeds:
+
+- HP increases by `30`
+- HP is capped at `100`
+- potion count decreases by `1`
+
+Healing does not create a bullet animation.
+
+### How resolve order works
+
+In `game_start_resolve_phase`, both players' locked choices are applied for the round.
+
+Shots are evaluated using the locked positions. Healing is then applied if selected.
+
+After health changes, `update_winner` checks the result:
+
+- Player 1 wins if Player 2 reaches `0`
+- Player 2 wins if Player 1 reaches `0`
+- draw if both reach `0`
+- no winner if both are still alive
+
+Damage feedback is calculated by comparing HP before and after the resolve.
+
+### How sudden death offer works
+
+After a normal resolve, the server checks:
+
+- no winner exists
+- sudden death was not already declined
+- Player 1 HP is `20` or below
+- Player 2 HP is `20` or below
+
+If all are true, the game enters `SUDDEN_DEATH_OFFER`.
+
+Both players vote. The rule is strict:
+
+- both `YES` means sudden death starts
+- any `NO` means normal play continues
+
+### How sudden death battle works
+
+Sudden death changes the game from turn-based resolve into live bullet movement.
+
+When sudden death starts:
+
+- both HP values reset to `100`
+- both columns reset to the center
+- both ammo counts reset to `5`
+- old bullets and feedback are cleared
+
+When a player presses `Space`, `fire_sudden_death_shot` tries to create a bullet.
+
+The shot only fires if:
+
+- ammo is greater than `0`
+- there is an unused bullet slot
+
+Each player has a fixed bullet pool of `5`. This keeps the code simple and avoids dynamic memory.
+
+Each active bullet stores:
+
+- row
+- column
+- active flag
+- movement timer
+
+Bullets move over time in `game_update_bullets`. If a bullet reaches the enemy row and the column matches, it deals `10` damage.
+
+### Why sudden death bullets use arrays
+
+Originally, normal resolve only needed one bullet per player because each player can shoot once per round.
+
+Sudden death allows repeated shooting, so one bullet slot is not enough.
+
+The sudden death arrays solve that:
+
+- `p1_sd_bullet_row`
+- `p1_sd_bullet_col`
+- `p1_sd_bullet_active`
+- `p1_sd_bullet_step_ms`
+
+Player 2 has the same set.
+
+The arrays are fixed size because ammo is fixed size. This is simple, predictable, and fits the game.
+
+### How damage feedback works
+
+Damage feedback uses four fields:
+
+- `p1_damage_feedback`
+- `p2_damage_feedback`
+- `p1_damage_feedback_ms`
+- `p2_damage_feedback_ms`
+
+When damage is applied, the game stores the amount and starts a short timer.
+
+During rendering, the player marker stays fixed as `1` or `2`. The `-10HP` text is drawn in a neighboring arena cell. It is not drawn inside the player cell because that would change the cell width and break the arena border.
+
+In sudden death, feedback appears only after the bullet actually reaches the target and hits. It does not appear when the bullet is fired.
+
+### How the arena stays aligned
+
+Every arena lane prints exactly seven characters.
+
+Examples:
+
+- empty cell: seven spaces
+- player: three spaces, player number, three spaces
+- bullet: three spaces, bullet symbol, three spaces
+- damage text: padded to exactly seven characters
+
+The arena border depends on this. If one cell prints six or eight characters, the right border shifts. That is why every cell string must stay the same width.
+
+### How the header stays aligned
+
+The header uses a fixed-width box.
+
+Each side of the header has the same visible width. The code prints:
+
+- left border
+- one space
+- exactly fixed-width content
+- one space
+- divider or right border
+
+Color escape codes do not count as visible characters, so the code manually tracks visible width for HP bars, potion bars, and ammo bars.
+
+If a row prints one extra visible character, the divider moves. If it prints one too few, the divider appears too early. That is why the HP row has its own careful width tracking.
+
+### How the state packet works
+
+The server serializes the full game state as one text line starting with `STATE`.
+
+The packet is not binary. It is a series of integers separated by spaces.
+
+The client parses those integers in the same order.
+
+This is simple and easy to debug, but it has one rule:
+
+If the server adds, removes, or reorders fields, `parse_state_line` in `client.c` must be updated the same way.
+
+### Why line buffers matter
+
+The state packet became longer after sudden death bullet arrays were added.
+
+The client line buffer must be large enough to hold the whole packet. If it is too small, the client reads only part of the `STATE` line and parsing fails. When parsing fails, the client does not render the game.
+
+That is why the client uses `NET_BUFFER_SIZE` for incoming state lines.
+
+### How quitting works
+
+Quit uses a two-press confirmation.
+
+First `q`:
+
+- arms quit
+- renders `Press q again to quit`
+
+Second `q`:
+
+- exits directly if on the start screen
+- exits directly if on game over
+- forfeits if inside an active match
+
+This prevents accidental quits during play while still making the start screen exit cleanly.
 
 ## Network Protocol
 
-The protocol is text-based.
+The protocol is line-based text.
 
-### Client to server commands
+### Client to server
 
 `LEFT`
-- Move left during move phase.
+
+- Move left in `MOVE`.
+- Select `SHOOT` in `ACTION`.
+- Vote `YES` in sudden death offer.
+- Move left in sudden death battle.
 
 `RIGHT`
-- Move right during move phase.
 
-`SHOOT`
-- Select shoot during action phase.
-
-`HEAL`
-- Select heal during action phase.
+- Move right in `MOVE`.
+- Select `HEAL` in `ACTION`.
+- Vote `NO` in sudden death offer.
+- Move right in sudden death battle.
 
 `LOCK`
-- Ready up in waiting phase.
-- Lock position in move phase.
-- Lock action in action phase.
+
+- Ready on start screen.
+- Lock position.
+- Lock action.
+- Lock sudden death vote.
+- Ready for sudden death.
+- Shoot during sudden death battle.
 
 `QUIT`
-- Leave the match.
 
-### Server to client state packet
+- Quit or forfeit depending on phase.
 
-The server sends one line beginning with `STATE` followed by the fields needed to rebuild `GameState`.
+### Server to client
 
-This packet includes:
-- phase
-- phase timer
-- round
-- winner
-- running flag
-- both players' HP
-- both players' columns
-- both players' potion counts
-- both players' actions
-- both lock flags
-- both ready flags
-- both resolve results
-- bullet animation state
+The server sends one `STATE` line containing the replicated `GameState`.
 
-## Variables That Matter Most
+The packet includes:
 
-### Player fields
+- phase and phase timer
+- round and winner
+- both players' HP, positions, potions, actions, locks, and ready flags
+- normal bullet animation state
+- sudden death vote state
+- sudden death ammo and reload state
+- damage feedback
+- sudden death bullet pools
 
-`col`
-- Current lane.
+If the server packet changes, the client parser must be updated to match.
 
-`hp`
-- Health.
+## Rendering Notes
 
-`potions`
-- Remaining heals.
+The game uses terminal escape sequences:
 
-`crit_chance`
-- Used during shooting to decide whether a hit becomes a critical hit.
+- `\033[?1049h`: enter alternate screen
+- `\033[?1049l`: leave alternate screen
+- `\033[?25l`: hide cursor
+- `\033[?25h`: show cursor
+- `\033[2J\033[H`: clear screen and move cursor home
 
-`action`
-- Selected action for the current action phase.
+The renderer also uses a display key so it does not redraw identical frames.
 
-`locked`
-- Whether the player already committed the current phase.
+## Current Behavior Summary
 
-### GameState fields
-
-`phase`
-- Current game mode.
-
-`phase_time_ms`
-- Elapsed time inside the current phase.
-
-`round_number`
-- Current round count.
-
-`winner`
-- Winning side or draw code.
-
-`running`
-- Whether the match is still active.
-
-`p1_ready`, `p2_ready`
-- Ready flags on the waiting screen.
-
-`p1_result`, `p2_result`
-- Labels shown during resolve.
-
-`bullet*_row`, `bullet*_col`, `bullet*_active`
-- Only used for resolve animation.
-
-## Why The Screen Now Behaves Properly
-
-Two separate changes matter here.
-
-First, both binaries use the terminal's alternate screen buffer:
-- enter with `\033[?1049h`
-- leave with `\033[?1049l`
-
-That keeps the game UI out of the normal terminal scrollback while it is running.
-
-Second, both binaries build a display key and only redraw when the visible frame changes.
-
-That reduces useless redraw spam and makes the terminal output much easier to follow while still keeping the countdown live.
-
-## Current Controls
-
-### Waiting phase
-
-- `Space` = ready
-- `q` = quit
-
-### Move phase
-
-- `Left Arrow` = move left
-- `Right Arrow` = move right
-- `Space` = lock
-- `q` = quit
-
-### Action phase
-
-- `[` = select shoot
-- `]` = select heal
-- `Space` = lock
-- `q` = quit
-
-## Current Rules
-
-- Enemy position is hidden during `WAITING`, `MOVE`, and `ACTION`
-- Enemy position becomes visible during `RESOLVE`
-- Move phase lasts 15 seconds
-- Action phase lasts 10 seconds
-- Resolve phase lasts 2 seconds
-- Hit deals 20 damage
-- Crit deals 30 damage
-- Miss deals 10 self-damage
-- Miss backfire can kill the shooter
-- Heal restores 30 HP
-- Heal uses one potion
-- Each player starts with 3 potions
-
-If one side changes the packet but the other side does not, the client and server will stop understanding each other.
+- Start screen shows only the `WILD WEST` banner.
+- Normal and sudden death arenas use the same height.
+- Enemy position is hidden during `MOVE` and `ACTION`.
+- Enemy action is hidden during `ACTION`.
+- Enemy position is visible during `RESOLVE`, `SUDDEN_DEATH_BATTLE`, and `GAME_OVER`.
+- Damage feedback appears only after damage is actually applied.
+- Quitting from the start screen exits directly.
+- Quitting during an active match forfeits.
+- Quitting from game over exits.
