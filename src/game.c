@@ -437,6 +437,24 @@ void game_start_resolve_phase(GameState *game)
         game->p2_result = player_apply_shot(&game->p2, &game->p1);
     }
 
+    // Execute ultimates first
+    if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
+        ultimate_execute(&game->p1, &game->p2);
+    }
+
+    if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
+        ultimate_execute(&game->p2, &game->p1);
+    }
+
+    // Only shoot if not using ultimate
+    if (game->p1.action != ACTION_ULTIMATE) {
+        game->p1_result = player_apply_shot(&game->p1, &game->p2);
+    }
+
+    if (game->p2.action != ACTION_ULTIMATE) {
+        game->p2_result = player_apply_shot(&game->p2, &game->p1);
+    }
+
     update_winner(game);
 
     game->phase = PHASE_RESOLVE;
