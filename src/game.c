@@ -1,6 +1,8 @@
 #include "game.h"
+#include "./include/ultimate.h"
 #include <stdio.h>
 #include <string.h>
+
 
 /* Bullet trails only exist during the resolve animation. */
 static void clear_bullets(GameState *game)
