@@ -420,12 +420,21 @@ void game_start_resolve_phase(GameState *game)
     game->p1_result = player_apply_shot(&game->p1, &game->p2);
     game->p2_result = player_apply_shot(&game->p2, &game->p1);
 
-    if (game->p1.action == ACTION_HEAL) {
-        game->p1_result = player_apply_heal(&game->p1);
+    if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
+        ultimate_execute(&game->p1, &game->p2);
     }
 
-    if (game->p2.action == ACTION_HEAL) {
-        game->p2_result = player_apply_heal(&game->p2);
+    if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
+        ultimate_execute(&game->p2, &game->p1);
+    }
+
+    //preventing players from shooting and using altimate simultaneously to avoid bugs
+    if (game->p1.action != ACTION_ULTIMATE) {
+        game->p1_result = player_apply_shot(&game->p1, &game->p2);
+    }
+
+    if (game->p2.action != ACTION_ULTIMATE) {
+        game->p2_result = player_apply_shot(&game->p2, &game->p1);
     }
 
     update_winner(game);
@@ -508,14 +517,9 @@ const char *game_phase_label(Phase phase)
 
 const char *game_action_label(Action action)
 {
-    if (action == ACTION_SHOOT) {
-        return "SHOOT";
-    }
-
-    if (action == ACTION_HEAL) {
-        return "HEAL";
-    }
-
+    if (action == ACTION_SHOOT) return "SHOOT";
+    if (action == ACTION_HEAL) return "HEAL";
+    if (action == ACTION_ULTIMATE) return "ULT";
     return "NONE";
 }
 
