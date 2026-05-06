@@ -8,7 +8,8 @@ typedef enum {
     ULT_ONE_SHOT,
     ULT_BARRAGE,
     ULT_DEFLECT,
-    ULT_REVEAL
+    ULT_REVEAL,
+    ACTION_ULTIMATE
 } UltimateType;
 
 // ULTIMATE SYSTEM API
