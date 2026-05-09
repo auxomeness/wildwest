@@ -105,11 +105,11 @@ static int read_key(void)
         return KEY_ULTIMATE;
     }
 
-    if (c == '[') {
+    if (c == 's' || c == 'S' || c == '[') {
         return KEY_SELECT_SHOOT;
     }
 
-    if (c == ']') {
+    if (c == 'h' || c == 'H' || c == ']') {
         return KEY_SELECT_HEAL;
     }
 
@@ -236,6 +236,18 @@ static int parse_state_line(GameState *game, const char *line)
     READ_STATE_INT(game->p2_damage_feedback);
     READ_STATE_INT(game->p1_damage_feedback_ms);
     READ_STATE_INT(game->p2_damage_feedback_ms);
+    READ_STATE_INT(game->p1.ultimate_ready);
+    READ_STATE_INT(game->p2.ultimate_ready);
+    READ_STATE_INT(value);
+    game->p1.ultimate_type = value;
+    READ_STATE_INT(value);
+    game->p2.ultimate_type = value;
+    READ_STATE_INT(game->p1_hit_streak);
+    READ_STATE_INT(game->p2_hit_streak);
+    READ_STATE_INT(value);
+    game->p1_ult_result = (ResolveResult)value;
+    READ_STATE_INT(value);
+    game->p2_ult_result = (ResolveResult)value;
 
     for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
         READ_STATE_INT(game->p1_sd_bullet_row[index]);
