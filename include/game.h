@@ -51,6 +51,8 @@ typedef struct {
     int p2_ready;
     ResolveResult p1_result;
     ResolveResult p2_result;
+    ResolveResult p1_ult_result;
+    ResolveResult p2_ult_result;
     int bullet1_row;
     int bullet1_col;
     int bullet1_active;
