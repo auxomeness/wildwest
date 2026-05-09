@@ -11,6 +11,9 @@ void player_init(Player *player, int start_col)
     player->crit_chance = DEFAULT_CRIT_CHANCE;
     player->action = ACTION_NONE;
     player->locked = 0;
+    player->ultimate_ready = 0;
+    player->ultimate_type = 0;
+    player->is_deflecting = 0;
 }
 
 void player_move(Player *player, int delta, int min_col, int max_col)
