@@ -542,6 +542,7 @@ void game_start_resolve_phase(GameState *game)
     if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
         int ult = game->p1.ultimate_type;
         ultimate_execute(&game->p1, &game->p2);
+        game->p1_hit_streak = 0;
         if (ult == ULT_ONE_SHOT)
             game->p1_ult_result = (game->p1.col == game->p2.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
         else if (ult == ULT_BARRAGE)
@@ -555,6 +556,7 @@ void game_start_resolve_phase(GameState *game)
     if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
         int ult = game->p2.ultimate_type;
         ultimate_execute(&game->p2, &game->p1);
+        game->p2_hit_streak = 0;
         if (ult == ULT_ONE_SHOT)
             game->p2_ult_result = (game->p2.col == game->p1.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
         else if (ult == ULT_BARRAGE)
@@ -566,12 +568,50 @@ void game_start_resolve_phase(GameState *game)
     }
 
     /* Only apply shots for players not using their ultimate. */
-    if (game->p1.action != ACTION_ULTIMATE) {
+    if (game->p1.action == ACTION_SHOOT) {
         game->p1_result = player_apply_shot(&game->p1, &game->p2);
+    } else if (game->p1.action == ACTION_HEAL) {
+        game->p1_result = player_apply_heal(&game->p1);
     }
 
-    if (game->p2.action != ACTION_ULTIMATE) {
+    if (game->p2.action == ACTION_SHOOT) {
         game->p2_result = player_apply_shot(&game->p2, &game->p1);
+    } else if (game->p2.action == ACTION_HEAL) {
+        game->p2_result = player_apply_heal(&game->p2);
+    }
+
+    /* --- Ultimate charge conditions ---
+     * Condition 1: land 3 consecutive hits (HIT or CRIT) on the enemy.
+     *   - A miss resets the streak. Healing is neutral (neither advances nor breaks it).
+     * Condition 2: own HP drops to 20% or below (20 HP on a 100 HP pool).
+     * Once charged, ultimate_ready stays set until the player uses it.
+     * Using the ultimate resets the streak so they must earn it again. */
+    if (!game->p1.ultimate_ready) {
+        if (game->p1.action == ACTION_SHOOT) {
+            if (game->p1_result == RESULT_SHOT_HIT || game->p1_result == RESULT_SHOT_CRIT) {
+                game->p1_hit_streak++;
+            } else if (game->p1_result == RESULT_SHOT_MISS) {
+                game->p1_hit_streak = 0;
+            }
+        }
+        if (game->p1_hit_streak >= 3 || game->p1.hp <= (MAX_HP / 5)) {
+            game->p1.ultimate_ready = 1;
+            game->p1_hit_streak = 0;
+        }
+    }
+
+    if (!game->p2.ultimate_ready) {
+        if (game->p2.action == ACTION_SHOOT) {
+            if (game->p2_result == RESULT_SHOT_HIT || game->p2_result == RESULT_SHOT_CRIT) {
+                game->p2_hit_streak++;
+            } else if (game->p2_result == RESULT_SHOT_MISS) {
+                game->p2_hit_streak = 0;
+            }
+        }
+        if (game->p2_hit_streak >= 3 || game->p2.hp <= (MAX_HP / 5)) {
+            game->p2.ultimate_ready = 1;
+            game->p2_hit_streak = 0;
+        }
     }
 
     add_damage_feedback(game, 1, p1_hp_before - game->p1.hp);
@@ -739,6 +779,28 @@ const char *game_action_label(Action action)
     if (action == ACTION_HEAL) return "HEAL";
     if (action == ACTION_ULTIMATE) return "ULT";
     return "NONE";
+}
+
+static const char *ult_type_label(int ult_type)
+{
+    switch (ult_type) {
+        case ULT_ONE_SHOT: return "ONE SHOT";
+        case ULT_BARRAGE:  return "BARRAGE";
+        case ULT_DEFLECT:  return "DEFLECT";
+        case ULT_REVEAL:   return "REVEAL";
+        default:           return "NONE";
+    }
+}
+
+static const char *ult_type_desc(int ult_type)
+{
+    switch (ult_type) {
+        case ULT_ONE_SHOT: return "Same col = instant kill. Miss = -20 self.";
+        case ULT_BARRAGE:  return "Hits enemy if within 1 col. -15 HP.";
+        case ULT_DEFLECT:  return "Block incoming shot this round.";
+        case ULT_REVEAL:   return "Reveal enemy position this resolve.";
+        default:           return "";
+    }
 }
 
 const char *game_result_label(ResolveResult result)
@@ -1003,21 +1065,33 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                  "YOU   Locked: %-3s   Ready: [%c]",
                  self->locked ? "YES" : "NO",
                  self_ready ? 'x' : ' ');
-        snprintf(left_line2,
-                 sizeof(left_line2),
-                 "Action: %-5s%s",
-                 game_action_label(self->action),
-                 self->ultimate_ready ? "  [ULT RDY]" : "");
+        {
+            int self_streak = player_id == 1 ? game->p1_hit_streak : game->p2_hit_streak;
+            if (self->ultimate_ready) {
+                snprintf(left_line2, sizeof(left_line2),
+                         "Action: %-5s  [ULT READY!]",
+                         game_action_label(self->action));
+            } else {
+                snprintf(left_line2, sizeof(left_line2),
+                         "Action: %-5s  Streak:%d/3",
+                         game_action_label(self->action),
+                         self_streak);
+            }
+        }
         snprintf(right_line1,
                  sizeof(right_line1),
                  "ENEMY Locked: %-3s   Ready: [%c]",
                  enemy->locked ? "YES" : "NO",
                  enemy_ready ? 'x' : ' ');
-        snprintf(right_line2,
-                 sizeof(right_line2),
-                 "Action: %-5s%s",
-                 game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action),
-                 (game->phase != PHASE_ACTION && enemy->ultimate_ready) ? "  [ULT RDY]" : "");
+        if (game->phase != PHASE_ACTION && enemy->ultimate_ready) {
+            snprintf(right_line2, sizeof(right_line2),
+                     "Action: %-5s  [ULT READY!]",
+                     game_action_label(enemy->action));
+        } else {
+            snprintf(right_line2, sizeof(right_line2),
+                     "Action: %s",
+                     game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action));
+        }
     }
     snprintf(left_status_line,
              sizeof(left_status_line),
@@ -1046,11 +1120,16 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                  sizeof(controls_line),
                  "Controls: Left/Right Arrow = move | Space = lock | q = quit");
     } else if (game->phase == PHASE_ACTION) {
-        snprintf(controls_line,
-                 sizeof(controls_line),
-                 self->ultimate_ready
-                     ? "Controls: Left = shoot | Right = heal | Up/U = ultimate | Space = lock | q = quit"
-                     : "Controls: Left = shoot | Right = heal | Space = lock | q = quit");
+        if (self->ultimate_ready && self->action == ACTION_ULTIMATE) {
+            snprintf(controls_line, sizeof(controls_line),
+                     "Controls: Left/Right = cycle ult | Space = lock | S = Shoot | H = Heal | q = quit");
+        } else if (self->ultimate_ready) {
+            snprintf(controls_line, sizeof(controls_line),
+                     "Controls: Left = shoot | Right = heal | U = ultimate | Space = lock | q = quit");
+        } else {
+            snprintf(controls_line, sizeof(controls_line),
+                     "Controls: Left = shoot | Right = heal | Space = lock | q = quit");
+        }
     } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
         snprintf(controls_line,
                  sizeof(controls_line),
@@ -1168,11 +1247,19 @@ void game_render(const GameState *game, int player_id, int quit_armed)
         printf("Enemy position is hidden. Choose a lane with Left/Right Arrow, then press Space to lock.\n");
     } else if (game->phase == PHASE_ACTION) {
         if (self->ultimate_ready) {
-            printf("SHOOT [%c]      HEAL [%c]      ULTIMATE [%c]\n",
-                   self->action == ACTION_SHOOT ? 'x' : ' ',
-                   self->action == ACTION_HEAL ? 'x' : ' ',
-                   self->action == ACTION_ULTIMATE ? 'x' : ' ');
-            printf("Enemy position is still hidden. Left = Shoot, Right = Heal, U = Ultimate, Space = lock.\n");
+            if (self->action == ACTION_ULTIMATE) {
+                /* Show ult type picker */
+                printf("SHOOT [ ]      HEAL [ ]      ULTIMATE [x]\n");
+                printf("  Select ultimate: < %s >   %s\n",
+                       ult_type_label(self->ultimate_type),
+                       ult_type_desc(self->ultimate_type));
+                printf("Left/Right = cycle ult | Space = lock | S = Shoot | H = Heal\n");
+            } else {
+                printf("SHOOT [%c]      HEAL [%c]      ULTIMATE [ ]\n",
+                       self->action == ACTION_SHOOT ? 'x' : ' ',
+                       self->action == ACTION_HEAL ? 'x' : ' ');
+                printf("Left = Shoot | Right = Heal | U = select Ultimate | Space = lock\n");
+            }
         } else {
             printf("SHOOT [%c]      HEAL [%c]\n",
                    self->action == ACTION_SHOOT ? 'x' : ' ',

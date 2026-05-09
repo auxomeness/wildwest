@@ -2,6 +2,7 @@
 #include "game.h"
 #include "network.h"
 #include "player.h"
+#include "ultimate.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +19,8 @@ enum {
     KEY_SELECT_SHOOT = 3,
     KEY_SELECT_HEAL = 4,
     KEY_SPACE = 5,
-    KEY_QUIT = 6
+    KEY_QUIT = 6,
+    KEY_ULTIMATE = 7
 };
 
 static struct termios original_termios;
@@ -103,11 +105,15 @@ static int read_key(void)
         return KEY_QUIT;
     }
 
-    if (c == '[') {
+    if (c == 'u' || c == 'U') {
+        return KEY_ULTIMATE;
+    }
+
+    if (c == 's' || c == 'S' || c == '[') {
         return KEY_SELECT_SHOOT;
     }
 
-    if (c == ']') {
+    if (c == 'h' || c == 'H' || c == ']') {
         return KEY_SELECT_HEAL;
     }
 
@@ -219,7 +225,15 @@ static int send_state(int client_fd, const GameState *game)
         append_state_int(state_line, sizeof(state_line), &offset, game->p1_damage_feedback) ||
         append_state_int(state_line, sizeof(state_line), &offset, game->p2_damage_feedback) ||
         append_state_int(state_line, sizeof(state_line), &offset, game->p1_damage_feedback_ms) ||
-        append_state_int(state_line, sizeof(state_line), &offset, game->p2_damage_feedback_ms)) {
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_damage_feedback_ms) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.ultimate_ready) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.ultimate_ready) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1.ultimate_type) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2.ultimate_type) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_hit_streak) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_hit_streak) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p1_ult_result) ||
+        append_state_int(state_line, sizeof(state_line), &offset, game->p2_ult_result)) {
         return -1;
     }
 
@@ -335,12 +349,35 @@ static int handle_local_input(GameState *game, int key, int *quit_armed)
             player_lock(&game->p1);
         }
     } else if (game->phase == PHASE_ACTION && !game->p1.locked) {
-        if (key == KEY_LEFT || key == KEY_SELECT_SHOOT) {
-            player_set_action(&game->p1, ACTION_SHOOT);
-        } else if (key == KEY_RIGHT || key == KEY_SELECT_HEAL) {
-            player_set_action(&game->p1, ACTION_HEAL);
-        } else if (key == KEY_SPACE) {
-            player_lock(&game->p1);
+        if (game->p1.action == ACTION_ULTIMATE) {
+            /* In ult picker mode: left/right cycles type, S/H exits back */
+            if (key == KEY_LEFT) {
+                int t = game->p1.ultimate_type - 1;
+                if (t < ULT_ONE_SHOT) t = ULT_REVEAL;
+                game->p1.ultimate_type = t;
+            } else if (key == KEY_RIGHT) {
+                int t = game->p1.ultimate_type + 1;
+                if (t > ULT_REVEAL) t = ULT_ONE_SHOT;
+                game->p1.ultimate_type = t;
+            } else if (key == KEY_SELECT_SHOOT) {
+                player_set_action(&game->p1, ACTION_SHOOT);
+            } else if (key == KEY_SELECT_HEAL) {
+                player_set_action(&game->p1, ACTION_HEAL);
+            } else if (key == KEY_SPACE) {
+                player_lock(&game->p1);
+            }
+        } else {
+            if (key == KEY_LEFT || key == KEY_SELECT_SHOOT) {
+                player_set_action(&game->p1, ACTION_SHOOT);
+            } else if (key == KEY_RIGHT || key == KEY_SELECT_HEAL) {
+                player_set_action(&game->p1, ACTION_HEAL);
+            } else if (key == KEY_ULTIMATE && game->p1.ultimate_ready) {
+                player_set_action(&game->p1, ACTION_ULTIMATE);
+                if (game->p1.ultimate_type == ULT_NONE)
+                    game->p1.ultimate_type = ULT_ONE_SHOT;
+            } else if (key == KEY_SPACE) {
+                player_lock(&game->p1);
+            }
         }
     }
 
@@ -389,12 +426,35 @@ static void handle_remote_command(GameState *game, const char *line)
             player_lock(&game->p2);
         }
     } else if (game->phase == PHASE_ACTION && !game->p2.locked) {
-        if (strcmp(line, "LEFT") == 0 || strcmp(line, "SHOOT") == 0) {
-            player_set_action(&game->p2, ACTION_SHOOT);
-        } else if (strcmp(line, "RIGHT") == 0 || strcmp(line, "HEAL") == 0) {
-            player_set_action(&game->p2, ACTION_HEAL);
-        } else if (strcmp(line, "LOCK") == 0) {
-            player_lock(&game->p2);
+        if (game->p2.action == ACTION_ULTIMATE) {
+            /* In ult picker mode */
+            if (strcmp(line, "LEFT") == 0) {
+                int t = game->p2.ultimate_type - 1;
+                if (t < ULT_ONE_SHOT) t = ULT_REVEAL;
+                game->p2.ultimate_type = t;
+            } else if (strcmp(line, "RIGHT") == 0) {
+                int t = game->p2.ultimate_type + 1;
+                if (t > ULT_REVEAL) t = ULT_ONE_SHOT;
+                game->p2.ultimate_type = t;
+            } else if (strcmp(line, "SHOOT") == 0) {
+                player_set_action(&game->p2, ACTION_SHOOT);
+            } else if (strcmp(line, "HEAL") == 0) {
+                player_set_action(&game->p2, ACTION_HEAL);
+            } else if (strcmp(line, "LOCK") == 0) {
+                player_lock(&game->p2);
+            }
+        } else {
+            if (strcmp(line, "LEFT") == 0 || strcmp(line, "SHOOT") == 0) {
+                player_set_action(&game->p2, ACTION_SHOOT);
+            } else if (strcmp(line, "RIGHT") == 0 || strcmp(line, "HEAL") == 0) {
+                player_set_action(&game->p2, ACTION_HEAL);
+            } else if (strcmp(line, "ULTIMATE") == 0 && game->p2.ultimate_ready) {
+                player_set_action(&game->p2, ACTION_ULTIMATE);
+                if (game->p2.ultimate_type == ULT_NONE)
+                    game->p2.ultimate_type = ULT_ONE_SHOT;
+            } else if (strcmp(line, "LOCK") == 0) {
+                player_lock(&game->p2);
+            }
         }
     }
 }

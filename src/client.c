@@ -15,7 +15,8 @@ enum {
     KEY_SELECT_SHOOT = 3,
     KEY_SELECT_HEAL = 4,
     KEY_SPACE = 5,
-    KEY_QUIT = 6
+    KEY_QUIT = 6,
+    KEY_ULTIMATE = 7
 };
 
 static struct termios original_termios;
@@ -100,11 +101,15 @@ static int read_key(void)
         return KEY_QUIT;
     }
 
-    if (c == '[') {
+    if (c == 'u' || c == 'U') {
+        return KEY_ULTIMATE;
+    }
+
+    if (c == 's' || c == 'S' || c == '[') {
         return KEY_SELECT_SHOOT;
     }
 
-    if (c == ']') {
+    if (c == 'h' || c == 'H' || c == ']') {
         return KEY_SELECT_HEAL;
     }
 
@@ -231,6 +236,18 @@ static int parse_state_line(GameState *game, const char *line)
     READ_STATE_INT(game->p2_damage_feedback);
     READ_STATE_INT(game->p1_damage_feedback_ms);
     READ_STATE_INT(game->p2_damage_feedback_ms);
+    READ_STATE_INT(game->p1.ultimate_ready);
+    READ_STATE_INT(game->p2.ultimate_ready);
+    READ_STATE_INT(value);
+    game->p1.ultimate_type = value;
+    READ_STATE_INT(value);
+    game->p2.ultimate_type = value;
+    READ_STATE_INT(game->p1_hit_streak);
+    READ_STATE_INT(game->p2_hit_streak);
+    READ_STATE_INT(value);
+    game->p1_ult_result = (ResolveResult)value;
+    READ_STATE_INT(value);
+    game->p2_ult_result = (ResolveResult)value;
 
     for (index = 0; index < SUDDEN_DEATH_MAX_AMMO; index++) {
         READ_STATE_INT(game->p1_sd_bullet_row[index]);
@@ -340,6 +357,11 @@ int main(int argc, char **argv)
                 }
             } else if (key == KEY_SELECT_HEAL) {
                 if (send_text(socket_fd, "HEAL\n") != 0) {
+                    keep_running = 0;
+                    break;
+                }
+            } else if (key == KEY_ULTIMATE) {
+                if (send_text(socket_fd, "ULTIMATE\n") != 0) {
                     keep_running = 0;
                     break;
                 }

@@ -87,6 +87,8 @@ typedef struct {
     int round_number;
     int winner;
     int running;
+    int p1_hit_streak;
+    int p2_hit_streak;
 } GameState;
 
 /* Core game lifecycle and rendering helpers. */

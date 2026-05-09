@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -std=c11 -pthread
 INCLUDES = -Iinclude
 
 # Shared gameplay code is linked into both binaries.
-COMMON_SRC = src/player.c src/game.c src/network.c
+COMMON_SRC = src/player.c src/game.c src/network.c src/ultimate.c
 SERVER_SRC = src/main.c src/server.c
 CLIENT_SRC = src/client.c
 
