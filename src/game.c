@@ -1,5 +1,5 @@
 #include "game.h"
-#include "./include/ultimate.h"
+#include "ultimate.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -19,6 +19,8 @@ static void clear_results(GameState *game)
 {
     game->p1_result = RESULT_NONE;
     game->p2_result = RESULT_NONE;
+    game->p1_ult_result = RESULT_NONE;
+    game->p2_ult_result = RESULT_NONE;
 }
 
 static void clear_sudden_death_bullets(GameState *game)
@@ -527,36 +529,43 @@ void game_start_resolve_phase(GameState *game)
         game->bullet2_col = game->p2.col;
     }
 
-    game->p1_result = player_apply_shot(&game->p1, &game->p2);
-    game->p2_result = player_apply_shot(&game->p2, &game->p1);
+    game->p1_result = RESULT_NONE;
+    game->p2_result = RESULT_NONE;
+    game->p1_ult_result = RESULT_NONE;
+    game->p2_ult_result = RESULT_NONE;
 
+    /* Deflect shields reset each round. */
+    game->p1.is_deflecting = 0;
+    game->p2.is_deflecting = 0;
+
+    /* Execute ultimates first so deflect shields are up before shots resolve. */
     if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
+        int ult = game->p1.ultimate_type;
         ultimate_execute(&game->p1, &game->p2);
+        if (ult == ULT_ONE_SHOT)
+            game->p1_ult_result = (game->p1.col == game->p2.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
+        else if (ult == ULT_BARRAGE)
+            game->p1_ult_result = (game->p1.col >= game->p2.col - 1 && game->p1.col <= game->p2.col + 1) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
+        else if (ult == ULT_DEFLECT)
+            game->p1_ult_result = RESULT_ULT_DEFLECT;
+        else if (ult == ULT_REVEAL)
+            game->p1_ult_result = RESULT_ULT_REVEAL;
     }
 
     if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
+        int ult = game->p2.ultimate_type;
         ultimate_execute(&game->p2, &game->p1);
+        if (ult == ULT_ONE_SHOT)
+            game->p2_ult_result = (game->p2.col == game->p1.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
+        else if (ult == ULT_BARRAGE)
+            game->p2_ult_result = (game->p2.col >= game->p1.col - 1 && game->p2.col <= game->p1.col + 1) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
+        else if (ult == ULT_DEFLECT)
+            game->p2_ult_result = RESULT_ULT_DEFLECT;
+        else if (ult == ULT_REVEAL)
+            game->p2_ult_result = RESULT_ULT_REVEAL;
     }
 
-    //preventing players from shooting and using altimate simultaneously to avoid bugs
-    if (game->p1.action != ACTION_ULTIMATE) {
-        game->p1_result = player_apply_shot(&game->p1, &game->p2);
-    }
-
-    if (game->p2.action != ACTION_ULTIMATE) {
-        game->p2_result = player_apply_shot(&game->p2, &game->p1);
-    }
-
-    // Execute ultimates first
-    if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
-        ultimate_execute(&game->p1, &game->p2);
-    }
-
-    if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
-        ultimate_execute(&game->p2, &game->p1);
-    }
-
-    // Only shoot if not using ultimate
+    /* Only apply shots for players not using their ultimate. */
     if (game->p1.action != ACTION_ULTIMATE) {
         game->p1_result = player_apply_shot(&game->p1, &game->p2);
     }
@@ -752,6 +761,22 @@ const char *game_result_label(ResolveResult result)
 
     if (result == RESULT_HEAL_FAIL) {
         return "HEAL FAILED";
+    }
+
+    if (result == RESULT_ULT_HIT) {
+        return "ULTIMATE HIT";
+    }
+
+    if (result == RESULT_ULT_MISS) {
+        return "ULTIMATE MISS";
+    }
+
+    if (result == RESULT_ULT_DEFLECT) {
+        return "DEFLECT READY";
+    }
+
+    if (result == RESULT_ULT_REVEAL) {
+        return "POSITION REVEALED";
     }
 
     return "NONE";
@@ -980,8 +1005,9 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                  self_ready ? 'x' : ' ');
         snprintf(left_line2,
                  sizeof(left_line2),
-                 "Action: %-5s",
-                 game_action_label(self->action));
+                 "Action: %-5s%s",
+                 game_action_label(self->action),
+                 self->ultimate_ready ? "  [ULT RDY]" : "");
         snprintf(right_line1,
                  sizeof(right_line1),
                  "ENEMY Locked: %-3s   Ready: [%c]",
@@ -989,8 +1015,9 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                  enemy_ready ? 'x' : ' ');
         snprintf(right_line2,
                  sizeof(right_line2),
-                 "Action: %-5s",
-                 game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action));
+                 "Action: %-5s%s",
+                 game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action),
+                 (game->phase != PHASE_ACTION && enemy->ultimate_ready) ? "  [ULT RDY]" : "");
     }
     snprintf(left_status_line,
              sizeof(left_status_line),
@@ -1021,7 +1048,9 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     } else if (game->phase == PHASE_ACTION) {
         snprintf(controls_line,
                  sizeof(controls_line),
-                 "Controls: Left = shoot | Right = heal | Space = lock | q = quit");
+                 self->ultimate_ready
+                     ? "Controls: Left = shoot | Right = heal | Up/U = ultimate | Space = lock | q = quit"
+                     : "Controls: Left = shoot | Right = heal | Space = lock | q = quit");
     } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
         snprintf(controls_line,
                  sizeof(controls_line),
@@ -1138,10 +1167,18 @@ void game_render(const GameState *game, int player_id, int quit_armed)
     } else if (game->phase == PHASE_MOVE) {
         printf("Enemy position is hidden. Choose a lane with Left/Right Arrow, then press Space to lock.\n");
     } else if (game->phase == PHASE_ACTION) {
-        printf("SHOOT [%c]      HEAL [%c]\n",
-               self->action == ACTION_SHOOT ? 'x' : ' ',
-               self->action == ACTION_HEAL ? 'x' : ' ');
-        printf("Enemy position is still hidden. Use Left for Shoot and Right for Heal, then press Space to lock.\n");
+        if (self->ultimate_ready) {
+            printf("SHOOT [%c]      HEAL [%c]      ULTIMATE [%c]\n",
+                   self->action == ACTION_SHOOT ? 'x' : ' ',
+                   self->action == ACTION_HEAL ? 'x' : ' ',
+                   self->action == ACTION_ULTIMATE ? 'x' : ' ');
+            printf("Enemy position is still hidden. Left = Shoot, Right = Heal, U = Ultimate, Space = lock.\n");
+        } else {
+            printf("SHOOT [%c]      HEAL [%c]\n",
+                   self->action == ACTION_SHOOT ? 'x' : ' ',
+                   self->action == ACTION_HEAL ? 'x' : ' ');
+            printf("Enemy position is still hidden. Use Left for Shoot and Right for Heal, then press Space to lock.\n");
+        }
     } else if (game->phase == PHASE_SUDDEN_DEATH_OFFER) {
         print_sudden_death_banner();
         printf("Both players are at %d HP or below. Enter sudden death only if both vote YES.\n",
@@ -1166,6 +1203,13 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                SUDDEN_DEATH_MAX_AMMO,
                SUDDEN_DEATH_RELOAD_MS / 1000);
     } else if (game->phase == PHASE_RESOLVE) {
+        ResolveResult self_ult = player_id == 1 ? game->p1_ult_result : game->p2_ult_result;
+        ResolveResult foe_ult  = player_id == 1 ? game->p2_ult_result : game->p1_ult_result;
+        if (self_ult != RESULT_NONE || foe_ult != RESULT_NONE) {
+            printf("Ultimate: you %s | enemy %s\n",
+                   self_ult != RESULT_NONE ? game_result_label(self_ult) : "---",
+                   foe_ult  != RESULT_NONE ? game_result_label(foe_ult)  : "---");
+        }
         printf("Resolve: you %s | enemy %s\n",
                game_result_label(self_result),
                game_result_label(foe_result));
