@@ -18,7 +18,8 @@ enum {
     KEY_SELECT_SHOOT = 3,
     KEY_SELECT_HEAL = 4,
     KEY_SPACE = 5,
-    KEY_QUIT = 6
+    KEY_QUIT = 6,
+    KEY_ULTIMATE = 7
 };
 
 static struct termios original_termios;
@@ -101,6 +102,10 @@ static int read_key(void)
 
     if (c == 'q' || c == 'Q') {
         return KEY_QUIT;
+    }
+
+    if (c == 'u' || c == 'U') {
+        return KEY_ULTIMATE;
     }
 
     if (c == '[') {
@@ -339,6 +344,8 @@ static int handle_local_input(GameState *game, int key, int *quit_armed)
             player_set_action(&game->p1, ACTION_SHOOT);
         } else if (key == KEY_RIGHT || key == KEY_SELECT_HEAL) {
             player_set_action(&game->p1, ACTION_HEAL);
+        } else if (key == KEY_ULTIMATE && game->p1.ultimate_ready) {
+            player_set_action(&game->p1, ACTION_ULTIMATE);
         } else if (key == KEY_SPACE) {
             player_lock(&game->p1);
         }
@@ -393,6 +400,8 @@ static void handle_remote_command(GameState *game, const char *line)
             player_set_action(&game->p2, ACTION_SHOOT);
         } else if (strcmp(line, "RIGHT") == 0 || strcmp(line, "HEAL") == 0) {
             player_set_action(&game->p2, ACTION_HEAL);
+        } else if (strcmp(line, "ULTIMATE") == 0 && game->p2.ultimate_ready) {
+            player_set_action(&game->p2, ACTION_ULTIMATE);
         } else if (strcmp(line, "LOCK") == 0) {
             player_lock(&game->p2);
         }

@@ -15,7 +15,8 @@ enum {
     KEY_SELECT_SHOOT = 3,
     KEY_SELECT_HEAL = 4,
     KEY_SPACE = 5,
-    KEY_QUIT = 6
+    KEY_QUIT = 6,
+    KEY_ULTIMATE = 7
 };
 
 static struct termios original_termios;
@@ -98,6 +99,10 @@ static int read_key(void)
 
     if (c == 'q' || c == 'Q') {
         return KEY_QUIT;
+    }
+
+    if (c == 'u' || c == 'U') {
+        return KEY_ULTIMATE;
     }
 
     if (c == '[') {
@@ -340,6 +345,11 @@ int main(int argc, char **argv)
                 }
             } else if (key == KEY_SELECT_HEAL) {
                 if (send_text(socket_fd, "HEAL\n") != 0) {
+                    keep_running = 0;
+                    break;
+                }
+            } else if (key == KEY_ULTIMATE) {
+                if (send_text(socket_fd, "ULTIMATE\n") != 0) {
                     keep_running = 0;
                     break;
                 }

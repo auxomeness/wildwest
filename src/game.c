@@ -542,6 +542,7 @@ void game_start_resolve_phase(GameState *game)
     if (game->p1.action == ACTION_ULTIMATE && ultimate_can_use(&game->p1)) {
         int ult = game->p1.ultimate_type;
         ultimate_execute(&game->p1, &game->p2);
+        game->p1_hit_streak = 0;
         if (ult == ULT_ONE_SHOT)
             game->p1_ult_result = (game->p1.col == game->p2.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
         else if (ult == ULT_BARRAGE)
@@ -555,6 +556,7 @@ void game_start_resolve_phase(GameState *game)
     if (game->p2.action == ACTION_ULTIMATE && ultimate_can_use(&game->p2)) {
         int ult = game->p2.ultimate_type;
         ultimate_execute(&game->p2, &game->p1);
+        game->p2_hit_streak = 0;
         if (ult == ULT_ONE_SHOT)
             game->p2_ult_result = (game->p2.col == game->p1.col) ? RESULT_ULT_HIT : RESULT_ULT_MISS;
         else if (ult == ULT_BARRAGE)
@@ -576,14 +578,17 @@ void game_start_resolve_phase(GameState *game)
 
     /* --- Ultimate charge conditions ---
      * Condition 1: land 3 consecutive hits (HIT or CRIT) on the enemy.
+     *   - A miss resets the streak. Healing is neutral (neither advances nor breaks it).
      * Condition 2: own HP drops to 20% or below (20 HP on a 100 HP pool).
      * Once charged, ultimate_ready stays set until the player uses it.
-     * Using the ultimate resets the streak so they have to earn it again. */
+     * Using the ultimate resets the streak so they must earn it again. */
     if (!game->p1.ultimate_ready) {
-        if (game->p1_result == RESULT_SHOT_HIT || game->p1_result == RESULT_SHOT_CRIT) {
-            game->p1_hit_streak++;
-        } else if (game->p1_result == RESULT_SHOT_MISS || game->p1_result == RESULT_HEAL || game->p1_result == RESULT_HEAL_FAIL) {
-            game->p1_hit_streak = 0;
+        if (game->p1.action == ACTION_SHOOT) {
+            if (game->p1_result == RESULT_SHOT_HIT || game->p1_result == RESULT_SHOT_CRIT) {
+                game->p1_hit_streak++;
+            } else if (game->p1_result == RESULT_SHOT_MISS) {
+                game->p1_hit_streak = 0;
+            }
         }
         if (game->p1_hit_streak >= 3 || game->p1.hp <= (MAX_HP / 5)) {
             game->p1.ultimate_ready = 1;
@@ -592,10 +597,12 @@ void game_start_resolve_phase(GameState *game)
     }
 
     if (!game->p2.ultimate_ready) {
-        if (game->p2_result == RESULT_SHOT_HIT || game->p2_result == RESULT_SHOT_CRIT) {
-            game->p2_hit_streak++;
-        } else if (game->p2_result == RESULT_SHOT_MISS || game->p2_result == RESULT_HEAL || game->p2_result == RESULT_HEAL_FAIL) {
-            game->p2_hit_streak = 0;
+        if (game->p2.action == ACTION_SHOOT) {
+            if (game->p2_result == RESULT_SHOT_HIT || game->p2_result == RESULT_SHOT_CRIT) {
+                game->p2_hit_streak++;
+            } else if (game->p2_result == RESULT_SHOT_MISS) {
+                game->p2_hit_streak = 0;
+            }
         }
         if (game->p2_hit_streak >= 3 || game->p2.hp <= (MAX_HP / 5)) {
             game->p2.ultimate_ready = 1;
