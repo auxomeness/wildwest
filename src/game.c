@@ -574,6 +574,35 @@ void game_start_resolve_phase(GameState *game)
         game->p2_result = player_apply_shot(&game->p2, &game->p1);
     }
 
+    /* --- Ultimate charge conditions ---
+     * Condition 1: land 3 consecutive hits (HIT or CRIT) on the enemy.
+     * Condition 2: own HP drops to 20% or below (20 HP on a 100 HP pool).
+     * Once charged, ultimate_ready stays set until the player uses it.
+     * Using the ultimate resets the streak so they have to earn it again. */
+    if (!game->p1.ultimate_ready) {
+        if (game->p1_result == RESULT_SHOT_HIT || game->p1_result == RESULT_SHOT_CRIT) {
+            game->p1_hit_streak++;
+        } else if (game->p1_result == RESULT_SHOT_MISS || game->p1_result == RESULT_HEAL || game->p1_result == RESULT_HEAL_FAIL) {
+            game->p1_hit_streak = 0;
+        }
+        if (game->p1_hit_streak >= 3 || game->p1.hp <= (MAX_HP / 5)) {
+            game->p1.ultimate_ready = 1;
+            game->p1_hit_streak = 0;
+        }
+    }
+
+    if (!game->p2.ultimate_ready) {
+        if (game->p2_result == RESULT_SHOT_HIT || game->p2_result == RESULT_SHOT_CRIT) {
+            game->p2_hit_streak++;
+        } else if (game->p2_result == RESULT_SHOT_MISS || game->p2_result == RESULT_HEAL || game->p2_result == RESULT_HEAL_FAIL) {
+            game->p2_hit_streak = 0;
+        }
+        if (game->p2_hit_streak >= 3 || game->p2.hp <= (MAX_HP / 5)) {
+            game->p2.ultimate_ready = 1;
+            game->p2_hit_streak = 0;
+        }
+    }
+
     add_damage_feedback(game, 1, p1_hp_before - game->p1.hp);
     add_damage_feedback(game, 2, p2_hp_before - game->p2.hp);
 
@@ -1003,21 +1032,33 @@ void game_render(const GameState *game, int player_id, int quit_armed)
                  "YOU   Locked: %-3s   Ready: [%c]",
                  self->locked ? "YES" : "NO",
                  self_ready ? 'x' : ' ');
-        snprintf(left_line2,
-                 sizeof(left_line2),
-                 "Action: %-5s%s",
-                 game_action_label(self->action),
-                 self->ultimate_ready ? "  [ULT RDY]" : "");
+        {
+            int self_streak = player_id == 1 ? game->p1_hit_streak : game->p2_hit_streak;
+            if (self->ultimate_ready) {
+                snprintf(left_line2, sizeof(left_line2),
+                         "Action: %-5s  [ULT READY!]",
+                         game_action_label(self->action));
+            } else {
+                snprintf(left_line2, sizeof(left_line2),
+                         "Action: %-5s  Streak:%d/3",
+                         game_action_label(self->action),
+                         self_streak);
+            }
+        }
         snprintf(right_line1,
                  sizeof(right_line1),
                  "ENEMY Locked: %-3s   Ready: [%c]",
                  enemy->locked ? "YES" : "NO",
                  enemy_ready ? 'x' : ' ');
-        snprintf(right_line2,
-                 sizeof(right_line2),
-                 "Action: %-5s%s",
-                 game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action),
-                 (game->phase != PHASE_ACTION && enemy->ultimate_ready) ? "  [ULT RDY]" : "");
+        if (game->phase != PHASE_ACTION && enemy->ultimate_ready) {
+            snprintf(right_line2, sizeof(right_line2),
+                     "Action: %-5s  [ULT READY!]",
+                     game_action_label(enemy->action));
+        } else {
+            snprintf(right_line2, sizeof(right_line2),
+                     "Action: %s",
+                     game->phase == PHASE_ACTION ? "HIDDEN" : game_action_label(enemy->action));
+        }
     }
     snprintf(left_status_line,
              sizeof(left_status_line),
