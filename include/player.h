@@ -5,7 +5,8 @@
 typedef enum {
     ACTION_NONE = 0,
     ACTION_SHOOT = 1,
-    ACTION_HEAL = 2
+    ACTION_HEAL = 2,
+    ACTION_ULTIMATE = 3
 } Action;
 
 /* Round outcome labels shown during resolve. */
@@ -15,7 +16,11 @@ typedef enum {
     RESULT_SHOT_CRIT = 2,
     RESULT_SHOT_MISS = 3,
     RESULT_HEAL = 4,
-    RESULT_HEAL_FAIL = 5
+    RESULT_HEAL_FAIL = 5,
+    RESULT_ULT_HIT = 6,
+    RESULT_ULT_MISS = 7,
+    RESULT_ULT_DEFLECT = 8,
+    RESULT_ULT_REVEAL = 9
 } ResolveResult;
 
 /* Runtime state for one player in the duel. */
@@ -26,6 +31,9 @@ typedef struct {
     int crit_chance;
     Action action;
     int locked;
+    int ultimate_ready;
+    int ultimate_type;
+    int is_deflecting;
 } Player;
 
 /* Player lifecycle and action helpers. */
