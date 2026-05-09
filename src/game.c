@@ -568,12 +568,16 @@ void game_start_resolve_phase(GameState *game)
     }
 
     /* Only apply shots for players not using their ultimate. */
-    if (game->p1.action != ACTION_ULTIMATE) {
+    if (game->p1.action == ACTION_SHOOT) {
         game->p1_result = player_apply_shot(&game->p1, &game->p2);
+    } else if (game->p1.action == ACTION_HEAL) {
+        game->p1_result = player_apply_heal(&game->p1);
     }
 
-    if (game->p2.action != ACTION_ULTIMATE) {
+    if (game->p2.action == ACTION_SHOOT) {
         game->p2_result = player_apply_shot(&game->p2, &game->p1);
+    } else if (game->p2.action == ACTION_HEAL) {
+        game->p2_result = player_apply_heal(&game->p2);
     }
 
     /* --- Ultimate charge conditions ---
